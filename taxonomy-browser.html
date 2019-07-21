@@ -1,0 +1,408 @@
+<!DOCTYPE HTML PUBLIC "-//IETF//DTD HTML//EN">
+<!--
+Copyright 2019 J. Aaron Pendergrass
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1. Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+-->
+
+<html> <head>
+<style>
+.node {
+  cursor: pointer;
+  stroke-width: 3px;
+}
+
+.link {
+  fill: none;
+  stroke: #9ecae1;
+  stroke-width: 1.5px;
+}
+
+div.tooltip {
+    position: absolute;			
+    text-align: center;			
+    padding: 4px;
+    font: 12px sans-serif;		
+    background: lightsteelblue;	
+    border: 0px;		
+    border-radius: 8px;			
+    pointer-events: none;			
+}
+
+.svg-container {
+  display: inline-block;
+  position: relative;
+  width: 100%;
+  padding-bottom: 100%; /* aspect ratio */
+  vertical-align: top;
+  overflow: hidden;
+}
+
+.svg-content {
+  display: inline-block;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+</style>
+<title>Test</title>
+</head>
+
+    <body>
+
+<script src="https://d3js.org/d3.v5.min.js"></script>
+<script>
+
+var search_bar = d3.select("body").append("div").style("align", "center")
+search_bar.append("input").attr("id", "search_input")
+
+var button = search_bar.append("button")
+    .html("Search").on("click", function(){
+	var search_input = document.getElementById("search_input")
+	console.log("searching for "+search_input.value);
+	itis_search_for_name(search_input.value)
+	    .then(function(xs){
+		if(xs){
+		    xs.forEach(def_node);
+		    update();
+		}
+	    }).catch(e => null);
+    });
+
+function def_node(obj){
+    tmp = all_nodes[obj.tsn];
+    if(tmp){
+	return tmp;
+    }
+    all_nodes[obj.tsn]     = obj;
+    obj.id                 = obj.tsn;
+    obj.visible            = true;
+    obj.children_state     = "unloaded";
+    obj.children           = []
+    return obj;
+}
+
+const cors_anywhere = 'https://cors-anywhere.herokuapp.com/'
+const itis_base = cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/'
+const itis_search_by_cn_url = itis_base + 'searchByCommonName'
+const itis_get_record_by_tsn_url = itis_base + 'getFullRecordFromTSN'
+const itis_get_children_by_tsn_url = itis_base + 'getHierarchyDownFromTSN'
+const itis_get_full_hierarchy_by_tsn_url = itis_base + 'getFullHierarchyFromTSN'
+
+function itis_search_for_name(cn){
+    return fetch(itis_search_by_cn_url+"?srchKey="+cn)
+	.then(r    => r.json())
+	.then(js   => js.commonNames)
+	.then(cns  => cns.map(cn => cn.tsn))
+	.then(tsns => tsns.map(itis_get_record_by_tsn))
+	.then(ps   => Promise.all(ps))
+}
+
+function itis_get_record_by_tsn(tsn){
+    return fetch(itis_get_record_by_tsn_url +"?tsn="+tsn)
+	.then(r => r.json())
+}
+
+function itis_get_parent(rec){
+    return itis_get_record_by_tsn(rec.parentTSN.parentTsn)
+}
+
+function itis_get_lineage(rec){
+    return fetch(itis_get_full_hierarchy_by_tsn_url+'?tsn='+rec.tsn)
+	.then(r => r.json())    
+	.then(js => js.hierarchyList)
+	.then(function(h){
+	    var recurse = function(i, acc){
+		if(i >= h.length){
+		    return acc;
+		}else if(h[i].tsn == rec.tsn){
+		    return acc
+		}else{
+		    return recurse(i+1, [h[i].tsn, ...acc])
+		}
+	    }
+	    return recurse(0, [])
+	})
+	.then(parent_tsns => parent_tsns.map(itis_get_record_by_tsn))
+	.then(ps => Promise.all(ps))
+}
+    
+function itis_get_children(rec){
+    return fetch(itis_get_children_by_tsn_url+'?tsn='+rec.tsn)
+	.then(r => r.json())
+	.then(j => Promise.all(j.hierarchyList.filter(c => c).map(child => itis_get_record_by_tsn(child.tsn))))
+}
+
+const animalia_tsn = 202423;
+
+itis_get_record_by_tsn(animalia_tsn).then(function(p){
+    p = def_node(p)
+    update();
+})
+
+/* Begin layout stuff */
+var width = window.innerWidth,
+    height = window.innerHeight,
+    all_nodes = {};
+
+var svg = d3.select("body")
+    .append("div")
+    .attr("id", "container")
+    .classed("svg-container", true)
+    .append("svg")
+    .attr("viewBox", "0 0 "+width+" "+height)
+    .attr("preserveAspectRatio", "xMinYMin meet")
+    .classed("svg-content", true);
+
+
+var nodes = []
+var links = []
+var simulation = d3.forceSimulation(nodes)
+    .force("charge", d3.forceManyBody().strength(-1000))
+    .force("link", d3.forceLink(link).distance(200))
+    .force("x", d3.forceX())
+    .force("y", d3.forceY())
+    .alphaTarget(1)
+    .on("tick", ticked);
+
+var container = svg.append("g").attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
+var link      = container.selectAll(".link");
+var node      = container.selectAll(".node");
+
+svg.call(
+    d3.zoom()
+        .scaleExtent([.1, 4])
+        .on("zoom", function() { container.attr("transform", d3.event.transform); })
+);
+
+const max_node_radius = 50;
+const min_node_radius = 10;
+
+function update() {
+    nodes = Object.values(all_nodes).filter(n => n.visible)
+    links = nodes.reduce(function(acc, n){
+	if(n.children){
+	    return acc.concat(n.children
+			      .filter(c => c.visible)
+			      .map(function(c){
+				  return {source: n,
+					  target: c}
+			      }))
+	}else{
+	    return acc;
+	}
+    }, [])
+
+
+    // Update the nodes…
+    console.log("laying out "+nodes.length+" nodes")
+    node = node.data(nodes, n => n.id)
+
+    // Exit any old nodes.
+    node.exit().remove();
+
+    node.transition().style("stroke", stroke)
+    
+    // Enter any new nodes.
+    node = node.enter().append("circle")
+	.attr("class", "node")
+	.style("fill", color)
+	.style("stroke", stroke)
+	.attr("cx", d => d.x)
+	.attr("cy", d => d.y)
+	.attr("r", d => 30) /* Math.min(Math.max(min_node_radius, 30),
+				 max_node_radius)) */
+	.on("click", click)
+	.on("mouseenter", mouseover)
+	.on("mouseout", function(d){
+	    div.transition()
+		.duration(500)
+		.style("opacity", 0);
+	})
+	.on("contextmenu", function(d){console.log("hello");})
+	.call(d3.drag()
+	      .on("start", dragstarted)
+	      .on("drag",  dragged)
+	      .on("end",   dragended))
+	.merge(node);
+
+    // Update the links…
+    link = link.data(links, d => d.target.id);
+    
+    // Exit any old links.
+    link.exit().remove();
+
+    // Enter any new links.
+    link = link.enter().insert("line", ".node")
+	.attr("class", "link")
+	.attr("x1", function(d) { return d.source.x; })
+	.attr("y1", function(d) { return d.source.y; })
+	.attr("x2", function(d) { return d.target.x; })
+	.attr("y2", function(d) { return d.target.y; })
+    	.merge(link);
+        
+    // Restart the force layout.
+    simulation.nodes(nodes)
+    simulation.force("link").links(links);
+    simulation.alpha(1).restart()
+}
+
+function ticked() {
+    node.attr("cx", d => d.x);
+    node.attr("cy", d => d.y);
+
+    link.attr("x1", function(d) { return d.source.x; })
+        .attr("y1", function(d) { return d.source.y; })
+        .attr("x2", function(d) { return d.target.x; })
+        .attr("y2", function(d) { return d.target.y; });
+}
+
+function stroke(d) {
+    if(d.fx || d.fy){
+	return "black";
+    }else{
+	return "white";
+    }
+}
+
+// Color leaf nodes orange, and packages white or blue.
+function color(d) {
+    if(d.taxRank.rankName.startsWith('Species')){
+	return "#808080"
+    }else if(d.children_state == 'loaded'){
+	return "#c6dbef"
+    }
+    return "#6ce0a4";
+}
+
+function add_child(parent, child){
+    if(parent.children && !parent.children.includes(child)){
+	parent.children = parent.children.concat(child)
+    }else if(!parent.children){
+	parent.children = [child]
+    }
+}
+
+// Toggle children on click.
+function click(d) {
+    if (d3.event.defaultPrevented) {
+	return;
+    }
+
+    if(d3.event.altKey) {
+	d.fx = null;
+	d.fy = null
+	update();
+    } else if (d3.event.shiftKey) {
+	  itis_get_lineage(d).then(function(ancestors){
+	    self = d
+	    ancestors.forEach(function(parent){
+		parent = def_node(parent);
+		add_child(parent, self);
+		self = parent;
+	    })
+	    update();
+	})
+    } else if(d.children_state == "unloaded"){
+	d.children_state = "loading"
+	itis_get_children(d).then(function(cs){
+	    d.children_state = "expanded";
+	    d.children_collapsed = false;
+	    cs.forEach(function(c){
+		    c = def_node(c);
+		    add_child(d, c)
+	    });
+	    update();
+	});
+    } else if (d.children_state == "collapsed") {
+	d.children_state = "expanded";
+	var recurse = function(c){
+	    c.visible = true;
+	    if(!c.children_collapsed){
+		c.children.forEach(recurse);
+	    }
+	}
+	d.children.forEach(recurse);
+	update();
+    } else if (d.children_state == "expanded"){
+	d.children_state = "collapsed";
+	var recurse = function(c){
+	    c.visible = false;
+	    c.children.forEach(recurse);
+	}
+	d.children.forEach(recurse);
+	update();
+    }
+}
+
+
+// tooltip
+var div = d3.select("body").append("div")	
+    .attr("class", "tooltip")				
+    .style("opacity", 0);
+
+function mouseover(d){
+    var text;
+    var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
+    if(eng_name){
+	text = eng_name.commonName +
+	    '<br/>('+d.scientificName.combinedName+')';
+    }else{
+	text = d.scientificName.combinedName;
+    }
+    div.transition()
+	.duration(200)
+	.style("opacity", .9);
+    div.html(text)
+	.style("left", (d3.event.pageX) + "px")
+	.style("top", (d3.event.pageY-28)+"px");
+}
+
+// dragging
+function dragstarted(d) {
+    d3.event.sourceEvent.stopPropagation();
+    if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+    d.x = d.x;
+    d.y = d.y;
+}
+
+function dragged(d) {
+    d.fx = d3.event.x;
+    d.fy = d3.event.y;
+}
+
+function dragended(d) {
+    if (!d3.event.active) simulation.alphaTarget(0);
+    if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
+	d.fx = d3.event.x;
+	d.fy = d3.event.y;
+    }
+    update()
+}
+</script>
