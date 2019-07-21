@@ -71,7 +71,7 @@ div.tooltip {
 }
 
 </style>
-<title>Test</title>
+<title>Taxonomy Browser</title>
 </head>
 
     <body>
@@ -195,11 +195,10 @@ var container = svg.append("g").attr("transform", "translate(" + width / 2 + ","
 var link      = container.selectAll(".link");
 var node      = container.selectAll(".node");
 
-svg.call(
-    d3.zoom()
-        .scaleExtent([.1, 4])
-        .on("zoom", function() { container.attr("transform", d3.event.transform); })
-);
+var zoom = d3.zoom()
+    .scaleExtent([.1, 4])
+    .on("zoom", function() { container.attr("transform", d3.event.transform); })
+svg.call(zoom);
 
 const max_node_radius = 50;
 const min_node_radius = 10;
@@ -390,6 +389,7 @@ function dragstarted(d) {
     if (!d3.event.active) simulation.alphaTarget(0.3).restart();
     d.x = d.x;
     d.y = d.y;
+    show_dropzones()   
 }
 
 function dragged(d) {
@@ -399,10 +399,95 @@ function dragged(d) {
 
 function dragended(d) {
     if (!d3.event.active) simulation.alphaTarget(0);
-    if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
+    dz = selected_dropzone();
+    if(dz){
+	console.log("in drop zone");
+	dz.action(d);
+	d.fx = null;
+	d.fy = null;
+    }else if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
 	d.fx = d3.event.x;
 	d.fy = d3.event.y;
     }
-    update()
+    hide_dropzones();
+    update();
 }
+
+
+
+// drop zone handling
+var dropzones = [{idx: 0, id:"wikipedia", title:"Wikipedia",
+		  action: function(d){window.open("https://en.wikipedia.org/wiki/Special:Search?search="+
+						  d.scientificName.combinedName)
+						 }},
+		 {idx: 1, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
+
+var dropzones_container = svg.append("g").attr("id", "dropzones");
+var dropzones_binding = dropzones_container.selectAll(".dropzone")
+    .data(dropzones)
+    .enter()
+    .append("rect")
+    .attr("class", "dropzone")
+    .attr("x", 0)
+    .attr("y", d => d.idx*height/dropzones.length)
+    .attr("width", width/4)
+    .attr("height", height/dropzones.length)
+    .attr("opacity", 0.5)
+    .attr("stroke-width", 2)
+    .attr("stroke", "black")
+    .attr("text", d => d.title)
+    .attr("pointer-events", "visible")
+    .on("mouseenter", select_dropzone)
+    .on("mouseout", deselect_dropzone);
+
+var dropzones_labels = dropzones_container.selectAll(".dropzone_label")
+    .data(dropzones)
+    .enter()
+    .append("text")
+    .attr("x", width/8)
+    .attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
+    .attr("font-family", "sans-serif")
+    .attr("font-size", "20px")
+    .attr("fill", "black")
+    .attr("pointer-events", "none")
+    .attr("text-anchor", "middle")
+    .text(d => d.title)
+
+update_dropzones()
+
+function show_dropzones(){
+    update_dropzones(1)
+}
+
+function hide_dropzones(){
+    update_dropzones(-1)
+}
+
+function selected_dropzone(){
+    return dropzones.find(d => d.selected);
+}
+
+
+function update_dropzones(active){
+    dropzones_binding.attr("fill", d => d.selected ? "yellow" : "grey")
+    dropzones_labels.attr("fill", d => d.selected ? "black" : "white")
+    
+    if(active != 0){
+	dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
+	dropzones_labels.attr("opacity", active > 0? "visible" : "hidden")
+    }	
+}
+
+function select_dropzone(dz){
+    console.log("selecting dropzone "+dz.id)
+    dropzones.forEach(function(d){d.selected = (d == dz);})
+    update_dropzones(0)
+}
+
+function deselect_dropzone(dz){
+    console.log("deselecting dropzone")
+    dz.selected = false;
+    update_dropzones(0);
+}
+
 </script>
