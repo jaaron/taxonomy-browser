@@ -89,6 +89,11 @@ div.search-bar {
 <script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
 
+const states = {unloaded:  0,
+		loading:   1,
+		expanded:  2,
+		collapsed: 3};
+
 function def_node(obj){
     tmp = all_nodes[obj.tsn];
     if(tmp){
@@ -98,8 +103,10 @@ function def_node(obj){
     all_nodes[obj.tsn]     = obj;
     obj.id                 = obj.tsn;
     obj.visible            = true;
-    obj.children_state     = "unloaded";
-    obj.children           = []
+    obj.children_state     = states.unloaded;
+    obj.ancestors_state    = states.unloaded;
+    obj.children           = [];
+    obj.parent             = null;
     return obj;
 }
 
@@ -314,7 +321,7 @@ function stroke(d) {
 function color(d) {
     if(d.taxRank.rankName.startsWith('Species')){
 	return "#808080"
-    }else if(d.children_state == 'loaded'){
+    }else if(d.children_state == states.expanded){
 	return "#c6dbef"
     }
     return "#6ce0a4";
@@ -322,13 +329,106 @@ function color(d) {
 
 function add_child(parent, child){
     if(parent.children && !parent.children.includes(child)){
-	parent.children = parent.children.concat(child)
-    }else if(!parent.children){
-	parent.children = [child]
+	parent.children = parent.children.concat(child);
+	child.parent    = parent;
     }
 }
 
-// Toggle children on click.
+function toggle_ancestors(d){
+    function collapse_ancestors(d){
+	function recurse(p){
+	    if(p){
+		p.visible = false;
+		recurse(p.parent);
+	    }
+	}
+	recurse(d.parent);
+	d.ancestors_state = states.collapsed;
+    }
+
+    function expand_ancestors(d){
+	function recurse(p){
+	    if(p){
+		p.visible = true;
+		if(p.ancestors_state != states.collapsed){
+		    recurse(p.parent);
+		}
+	    }
+	}
+	recurse(d.parent);
+	d.ancestors_state = states.expanded;
+    }
+
+    function load_ancestors(d){
+	loading_spinner.start_loading();
+	d.ancestors_state = states.loading
+	itis.get_lineage(d).then(function(ancestors){
+	    self = d
+	    ancestors.forEach(function(parent){
+		parent = def_node(parent);
+		add_child(parent, self);
+		self = parent;
+	    });
+	    ancestors.forEach(function(p){
+		p.ancestors_state = states.expanded;
+	    });
+	    d.ancestors_state = states.expanded;
+	    update();
+	}).finally(function(){loading_spinner.done_loading()});
+    }
+    
+    if(d.ancestors_state == states.unloaded){
+	load_ancestors(d);
+    }else if(d.ancestors_state == states.expanded){
+	collapse_ancestors(d);
+    }else if(d.ancestors_state == states.collapsed){
+	expand_ancestors(d);
+    }
+}
+
+function toggle_children(d){
+    function load_children(d){
+	loading_spinner.start_loading();
+	d.children_state = states.loading;
+	itis.get_children(d).then(function(cs){
+	    cs.forEach(function(c){
+		c = def_node(c);
+		add_child(d, c)
+	    });
+	    d.children_state = states.expanded;
+	    update();
+	}).finally(function(){loading_spinner.done_loading()});
+    }
+    function expand_children(d){
+	d.children_state = states.expanded;
+	var recurse = function(c){
+	    c.visible = true;
+	    if(!c.children_state == states.collapsed){
+		c.children.forEach(recurse);
+	    }
+	}
+	d.children.forEach(recurse);
+    }
+    function collapse_children(d){
+	var recurse = function(c){
+	    c.visible = false;	    
+	    c.children.forEach(recurse);
+	}
+	d.children.forEach(recurse);
+	d.children_state = states.collapsed;
+	update();
+    }
+
+    if(d.children_state == states.unloaded){
+	load_children(d)
+    } else if (d.children_state == states.collapsed) {
+	expand_children(d)
+    } else if (d.children_state == states.expanded){
+	collapse_children(d)
+    }
+}
+
+    // Toggle children on click.
 function click(d) {
     if (d3.event.defaultPrevented) {
 	return;
@@ -337,49 +437,12 @@ function click(d) {
     if(d3.event.altKey) {
 	d.fx = null;
 	d.fy = null
-	update();
     } else if (d3.event.shiftKey) {
-	loading_spinner.start_loading();
-	itis.get_lineage(d).then(function(ancestors){
-	    self = d
-	    ancestors.forEach(function(parent){
-		parent = def_node(parent);
-		add_child(parent, self);
-		self = parent;
-	    })
-	    update();
-	}).finally(function(){loading_spinner.done_loading()});
-    } else if(d.children_state == "unloaded"){
-	loading_spinner.start_loading();
-	d.children_state = "loading"	
-	itis.get_children(d).then(function(cs){
-	    d.children_state = "expanded";
-	    d.children_collapsed = false;
-	    cs.forEach(function(c){
-		    c = def_node(c);
-		    add_child(d, c)
-	    });
-	    update();
-	}).finally(function(){loading_spinner.done_loading()});
-    } else if (d.children_state == "collapsed") {
-	d.children_state = "expanded";
-	var recurse = function(c){
-	    c.visible = true;
-	    if(!c.children_collapsed){
-		c.children.forEach(recurse);
-	    }
-	}
-	d.children.forEach(recurse);
-	update();
-    } else if (d.children_state == "expanded"){
-	d.children_state = "collapsed";
-	var recurse = function(c){
-	    c.visible = false;
-	    c.children.forEach(recurse);
-	}
-	d.children.forEach(recurse);
-	update();
+	toggle_ancestors(d)
+    } else {
+	toggle_children(d)
     }
+    update();
 }
 
 // tooltip
