@@ -54,12 +54,17 @@ div.tooltip {
     pointer-events: none;
 }
 
+div.search-bar {
+    height: 30px;
+    border: 1px;
+}
+
 .svg-container {
     display: inline-block;
     position: fixed;
     left: 0px;
     right: 0;
-    top: 0px;
+    top: 30px;
     bottom: 0;
     vertical-align: top;
 }
@@ -76,31 +81,18 @@ div.tooltip {
 </head>
 
     <body>
-
+      <div class="search-bar">
+	<input id="search-input">
+	<button id="search-button" onclick="do_search()">Search</button>
+      </div>
+      
 <script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
-
-var search_bar = d3.select("body").append("div").style("align", "center")
-search_bar.append("input").attr("id", "search_input")
-
-var button = search_bar.append("button")
-    .html("Search").on("click", function(){
-	var search_input = document.getElementById("search_input")
-	console.log("searching for "+search_input.value);
-	loading_spinner.start_loading();
-	itis_search_for_name(search_input.value)
-	    .then(function(xs){
-		if(xs){
-		    xs.forEach(def_node);
-		    update();
-		}
-	    }).catch(e => null)
-	    .finally(function(){loading_spinner.done_loading()});
-    });
 
 function def_node(obj){
     tmp = all_nodes[obj.tsn];
     if(tmp){
+	tmp.visible = true;
 	return tmp;
     }
     all_nodes[obj.tsn]     = obj;
@@ -111,63 +103,92 @@ function def_node(obj){
     return obj;
 }
 
-const cors_anywhere = 'https://cors-anywhere.herokuapp.com/'
-const itis_base = cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/'
-const itis_search_by_cn_url = itis_base + 'searchByCommonName'
-const itis_get_record_by_tsn_url = itis_base + 'getFullRecordFromTSN'
-const itis_get_children_by_tsn_url = itis_base + 'getHierarchyDownFromTSN'
-const itis_get_full_hierarchy_by_tsn_url = itis_base + 'getFullHierarchyFromTSN'
+function setup_itis(){
+    const cors_anywhere			= 'https://cors-anywhere.herokuapp.com/'
+    const base_url			= cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/'
+    const search_by_cn_url		= base_url + 'searchByCommonName'
+    const get_record_by_tsn_url		= base_url + 'getFullRecordFromTSN'
+    const get_children_by_tsn_url	= base_url + 'getHierarchyDownFromTSN'
+    const get_full_hierarchy_by_tsn_url = base_url + 'getFullHierarchyFromTSN'
 
-function itis_search_for_name(cn){
-    return fetch(itis_search_by_cn_url+"?srchKey="+cn)
-	.then(r    => r.json())
-	.then(js   => js.commonNames)
-	.then(cns  => cns.map(cn => cn.tsn))
-	.then(tsns => tsns.map(itis_get_record_by_tsn))
-	.then(ps   => Promise.all(ps))
-}
+    function search_for_name(cn){
+	return fetch(search_by_cn_url+"?srchKey="+cn)
+	    .then(r    => r.json())
+	    .then(js   => js.commonNames)
+	    .then(cns  => cns.map(cn => cn.tsn))
+	    .then(tsns => tsns.map(get_record_by_tsn))
+	    .then(ps   => Promise.all(ps))
+    }
 
-function itis_get_record_by_tsn(tsn){
-    return fetch(itis_get_record_by_tsn_url +"?tsn="+tsn)
-	.then(r => r.json())
-}
+    function get_record_by_tsn(tsn){
+	return fetch(get_record_by_tsn_url +"?tsn="+tsn)
+	    .then(r => r.json())
+    }
 
-function itis_get_parent(rec){
-    return itis_get_record_by_tsn(rec.parentTSN.parentTsn)
-}
+    function get_parent(rec){
+	return get_record_by_tsn(rec.parentTSN.parentTsn)
+    }
 
-function itis_get_lineage(rec){
-    return fetch(itis_get_full_hierarchy_by_tsn_url+'?tsn='+rec.tsn)
-	.then(r => r.json())    
-	.then(js => js.hierarchyList)
-	.then(function(h){
-	    var recurse = function(i, acc){
-		if(i >= h.length){
-		    return acc;
-		}else if(h[i].tsn == rec.tsn){
-		    return acc
-		}else{
-		    return recurse(i+1, [h[i].tsn, ...acc])
+    function get_lineage(rec){
+	return fetch(get_full_hierarchy_by_tsn_url+'?tsn='+rec.tsn)
+	    .then(r => r.json())    
+	    .then(js => js.hierarchyList)
+	    .then(function(h){
+		var recurse = function(i, acc){
+		    if(i >= h.length){
+			return acc;
+		    }else if(h[i].tsn == rec.tsn){
+			return acc
+		    }else{
+			return recurse(i+1, [h[i].tsn, ...acc])
+		    }
 		}
-	    }
-	    return recurse(0, [])
-	})
-	.then(parent_tsns => parent_tsns.map(itis_get_record_by_tsn))
-	.then(ps => Promise.all(ps))
-}
+		return recurse(0, [])
+	    })
+	    .then(parent_tsns => parent_tsns.map(get_record_by_tsn))
+	    .then(ps => Promise.all(ps))
+    }
+
+    function get_children(rec){
+	return fetch(get_children_by_tsn_url+'?tsn='+rec.tsn)
+	    .then(r => r.json())
+	    .then(j => Promise.all(j.hierarchyList.filter(c => c)
+				   .map(child => get_record_by_tsn(child.tsn))))
+    }
     
-function itis_get_children(rec){
-    return fetch(itis_get_children_by_tsn_url+'?tsn='+rec.tsn)
-	.then(r => r.json())
-	.then(j => Promise.all(j.hierarchyList.filter(c => c).map(child => itis_get_record_by_tsn(child.tsn))))
+    const animalia_tsn = 202423;
+    function get_root(){return get_record_by_tsn(animalia_tsn);}
+    
+    return {
+	search_for_name:   search_for_name,
+	get_record_by_tsn: get_record_by_tsn,
+	get_parent:        get_parent,
+	get_lineage:       get_lineage,
+	get_children:      get_children,
+	get_root:          get_root
+    }
 }
 
-const animalia_tsn = 202423;
+const itis = setup_itis();
 
-itis_get_record_by_tsn(animalia_tsn).then(function(p){
+itis.get_root().then(function(p){
     p = def_node(p)
     update();
 })
+
+function do_search(){
+    var search_input = document.getElementById("search-input")
+    console.log("searching for "+search_input.value);
+    loading_spinner.start_loading();
+    itis.search_for_name(search_input.value)
+	.then(function(xs){
+	    if(xs){
+		xs.forEach(def_node);
+		update();
+	    }
+	}).catch(e => null)
+	.finally(function(){loading_spinner.done_loading()});
+};
 
 /* Begin layout stuff */
 var svg_container = d3.select("body")
@@ -182,7 +203,6 @@ var width = document.getElementById("svg-container").clientWidth,
 var svg = svg_container
     .append("svg")
     .attr("viewBox", "0 0 "+width+" "+height)
-//    .attr("preserveAspectRatio", "xMinYMin meet")
     .classed("svg-content", true);
 
 var nodes = []
@@ -320,7 +340,7 @@ function click(d) {
 	update();
     } else if (d3.event.shiftKey) {
 	loading_spinner.start_loading();
-	itis_get_lineage(d).then(function(ancestors){
+	itis.get_lineage(d).then(function(ancestors){
 	    self = d
 	    ancestors.forEach(function(parent){
 		parent = def_node(parent);
@@ -332,7 +352,7 @@ function click(d) {
     } else if(d.children_state == "unloaded"){
 	loading_spinner.start_loading();
 	d.children_state = "loading"	
-	itis_get_children(d).then(function(cs){
+	itis.get_children(d).then(function(cs){
 	    d.children_state = "expanded";
 	    d.children_collapsed = false;
 	    cs.forEach(function(c){
@@ -398,7 +418,7 @@ function dragstarted(d) {
     if (!d3.event.active) simulation.alphaTarget(0.3).restart();
     d.x = d.x;
     d.y = d.y;
-    show_dropzones()   
+    dropzones.show()   
 }
 
 function dragged(d) {
@@ -408,7 +428,7 @@ function dragged(d) {
 
 function dragended(d) {
     if (!d3.event.active) simulation.alphaTarget(0);
-    dz = selected_dropzone();
+    dz = dropzones.selected();
     if(dz){
 	console.log("in drop zone");
 	dz.action(d);
@@ -418,89 +438,99 @@ function dragended(d) {
 	d.fx = d3.event.x;
 	d.fy = d3.event.y;
     }
-    hide_dropzones();
+    dropzones.hide();
     update();
 }
 
-// drop zone handling
-var dropzones = [{idx: 0, id:"wikipedia", title:"Wikipedia",
-		  action: function(d){window.open("https://en.wikipedia.org/wiki/Special:Search?search="+
-						  d.scientificName.combinedName)
-				     }},
-		 {idx: 1, id:"google-image", title:"Google Image Search",
-		  action: function(d){window.open("https://www.google.com/search?tbm=isch&q="+
-						  d.scientificName.combinedName)}},
-		 {idx: 2, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
+function setup_dropzones(){
+    // drop zone handling
+    var dropzones = [{idx: 0, id:"wikipedia", title:"Wikipedia",
+		      action: function(d){window.open("https://en.wikipedia.org/wiki/Special:Search?search="+
+						      d.scientificName.combinedName)
+					 }},
+		     {idx: 1, id:"google-image", title:"Google Image Search",
+		      action: function(d){window.open("https://www.google.com/search?tbm=isch&q="+
+						      d.scientificName.combinedName)}},
+		     {idx: 2, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
+    
+    var dropzones_container = svg.append("g").attr("id", "dropzones");
+    var dropzones_binding = dropzones_container.selectAll(".dropzone")
+	.data(dropzones)
+	.enter()
+	.append("rect")
+	.attr("class", "dropzone")
+	.attr("opacity", 0.5)
+	.attr("stroke-width", 2)
+	.attr("stroke", "black")
+	.attr("text", d => d.title)
+	.attr("pointer-events", "visible")
+	.on("mouseenter", select_dropzone)
+	.on("mouseout", deselect_dropzone);
+    
+    var dropzones_labels = dropzones_container.selectAll(".dropzone_label")
+	.data(dropzones)
+	.enter()
+	.append("text")
+	.attr("font-family", "sans-serif")
+	.attr("font-size", "20px")
+	.attr("fill", "black")
+	.attr("pointer-events", "none")
+	.attr("text-anchor", "middle")
+	.text(d => d.title)
 
-var dropzones_container = svg.append("g").attr("id", "dropzones");
-var dropzones_binding = dropzones_container.selectAll(".dropzone")
-    .data(dropzones)
-    .enter()
-    .append("rect")
-    .attr("class", "dropzone")
-    .attr("opacity", 0.5)
-    .attr("stroke-width", 2)
-    .attr("stroke", "black")
-    .attr("text", d => d.title)
-    .attr("pointer-events", "visible")
-    .on("mouseenter", select_dropzone)
-    .on("mouseout", deselect_dropzone);
+    update_dropzones()
 
-var dropzones_labels = dropzones_container.selectAll(".dropzone_label")
-    .data(dropzones)
-    .enter()
-    .append("text")
-    .attr("font-family", "sans-serif")
-    .attr("font-size", "20px")
-    .attr("fill", "black")
-    .attr("pointer-events", "none")
-    .attr("text-anchor", "middle")
-    .text(d => d.title)
+    function show_dropzones(){
+	update_dropzones(1)
+    }
 
-update_dropzones()
+    function hide_dropzones(){
+	update_dropzones(-1)
+    }
 
-function show_dropzones(){
-    update_dropzones(1)
-}
-
-function hide_dropzones(){
-    update_dropzones(-1)
-}
-
-function selected_dropzone(){
-    return dropzones.find(d => d.selected);
-}
+    function selected_dropzone(){
+	return dropzones.find(d => d.selected);
+    }
 
 
-function update_dropzones(active){
-    dropzones_binding
-	.attr("fill", d => d.selected ? "yellow" : "grey")
-        .attr("x", 0)
-	.attr("y", d => d.idx*height/dropzones.length)
-	.attr("width", width/4)
-	.attr("height", height/dropzones.length)
+    function update_dropzones(active){
+	dropzones_binding
+	    .attr("fill", d => d.selected ? "yellow" : "grey")
+            .attr("x", 0)
+	    .attr("y", d => d.idx*height/dropzones.length)
+	    .attr("width", width/4)
+	    .attr("height", height/dropzones.length)
 
-    dropzones_labels
-	.attr("fill", d => d.selected ? "black" : "white")
-        .attr("x", width/8)
-	.attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
+	dropzones_labels
+	    .attr("fill", d => d.selected ? "black" : "white")
+            .attr("x", width/8)
+	    .attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
 
-    if(active != 0){
-	dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
-	dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
-    }	
-}
+	if(active != 0){
+	    dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
+	    dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
+	}	
+    }
 
-function select_dropzone(dz){
-    console.log("selecting dropzone "+dz.id)
-    dropzones.forEach(function(d){d.selected = (d == dz);})
-    update_dropzones(0)
-}
+    function select_dropzone(dz){
+	console.log("selecting dropzone "+dz.id)
+	dropzones.forEach(function(d){d.selected = (d == dz);})
+	update_dropzones(0)
+    }
 
-function deselect_dropzone(dz){
-    console.log("deselecting dropzone")
-    dz.selected = false;
-    update_dropzones(0);
+    function deselect_dropzone(dz){
+	console.log("deselecting dropzone")
+	dz.selected = false;
+	update_dropzones(0);
+    }
+
+    return{ update: update_dropzones,
+	    select: select_dropzone,
+	    deselect: deselect_dropzone,
+	    show: show_dropzones,
+	    hide: hide_dropzones,
+	    selected: selected_dropzone
+	  }
 }
 
 function spinner(){    
@@ -554,7 +584,8 @@ function spinner(){
     }
 }
 
-var loading_spinner = spinner();
+const loading_spinner = spinner();
+const dropzones       = setup_dropzones();
 
 function redraw_all(){
     width = document.getElementById("svg-container").clientWidth,
@@ -563,7 +594,7 @@ function redraw_all(){
     svg.attr("width", width)
     svg.attr("height", height)
     svg.attr("viewBox", "0 0 "+width+" "+height)
-    update_dropzones();
+    dropzones.update();
     loading_spinner.relocate();
     update();
 }
