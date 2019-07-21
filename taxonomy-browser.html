@@ -51,16 +51,17 @@ div.tooltip {
     background: lightsteelblue;	
     border: 0px;		
     border-radius: 8px;			
-    pointer-events: none;			
+    pointer-events: none;
 }
 
 .svg-container {
-  display: inline-block;
-  position: relative;
-  width: 100%;
-  padding-bottom: 100%; /* aspect ratio */
-  vertical-align: top;
-  overflow: hidden;
+    display: inline-block;
+    position: fixed;
+    left: 0px;
+    right: 0;
+    top: 0px;
+    bottom: 0;
+    vertical-align: top;
 }
 
 .svg-content {
@@ -86,13 +87,15 @@ var button = search_bar.append("button")
     .html("Search").on("click", function(){
 	var search_input = document.getElementById("search_input")
 	console.log("searching for "+search_input.value);
+	loading_spinner.start_loading();
 	itis_search_for_name(search_input.value)
 	    .then(function(xs){
 		if(xs){
 		    xs.forEach(def_node);
 		    update();
 		}
-	    }).catch(e => null);
+	    }).catch(e => null)
+	    .finally(function(){loading_spinner.done_loading()});
     });
 
 function def_node(obj){
@@ -167,19 +170,20 @@ itis_get_record_by_tsn(animalia_tsn).then(function(p){
 })
 
 /* Begin layout stuff */
-var width = window.innerWidth,
-    height = window.innerHeight,
+var svg_container = d3.select("body")
+    .append("div")
+    .attr("id", "svg-container")
+    .classed("svg-container", true);
+
+var width = document.getElementById("svg-container").clientWidth,
+    height = document.getElementById("svg-container").clientHeight,
     all_nodes = {};
 
-var svg = d3.select("body")
-    .append("div")
-    .attr("id", "container")
-    .classed("svg-container", true)
+var svg = svg_container
     .append("svg")
     .attr("viewBox", "0 0 "+width+" "+height)
-    .attr("preserveAspectRatio", "xMinYMin meet")
+//    .attr("preserveAspectRatio", "xMinYMin meet")
     .classed("svg-content", true);
-
 
 var nodes = []
 var links = []
@@ -238,12 +242,8 @@ function update() {
 	.attr("r", d => 30) /* Math.min(Math.max(min_node_radius, 30),
 				 max_node_radius)) */
 	.on("click", click)
-	.on("mouseenter", mouseover)
-	.on("mouseout", function(d){
-	    div.transition()
-		.duration(500)
-		.style("opacity", 0);
-	})
+	.on("mouseenter", show_hover_div)
+	.on("mouseout", hide_hover_div)
 	.on("contextmenu", function(d){console.log("hello");})
 	.call(d3.drag()
 	      .on("start", dragstarted)
@@ -319,7 +319,8 @@ function click(d) {
 	d.fy = null
 	update();
     } else if (d3.event.shiftKey) {
-	  itis_get_lineage(d).then(function(ancestors){
+	loading_spinner.start_loading();
+	itis_get_lineage(d).then(function(ancestors){
 	    self = d
 	    ancestors.forEach(function(parent){
 		parent = def_node(parent);
@@ -327,9 +328,10 @@ function click(d) {
 		self = parent;
 	    })
 	    update();
-	})
+	}).finally(function(){loading_spinner.done_loading()});
     } else if(d.children_state == "unloaded"){
-	d.children_state = "loading"
+	loading_spinner.start_loading();
+	d.children_state = "loading"	
 	itis_get_children(d).then(function(cs){
 	    d.children_state = "expanded";
 	    d.children_collapsed = false;
@@ -338,7 +340,7 @@ function click(d) {
 		    add_child(d, c)
 	    });
 	    update();
-	});
+	}).finally(function(){loading_spinner.done_loading()});
     } else if (d.children_state == "collapsed") {
 	d.children_state = "expanded";
 	var recurse = function(c){
@@ -360,13 +362,12 @@ function click(d) {
     }
 }
 
-
 // tooltip
-var div = d3.select("body").append("div")	
+var hover_div = d3.select("body").append("div")	
     .attr("class", "tooltip")				
     .style("opacity", 0);
 
-function mouseover(d){
+function show_hover_div(d){
     var text;
     var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
     if(eng_name){
@@ -375,12 +376,20 @@ function mouseover(d){
     }else{
 	text = d.scientificName.combinedName;
     }
-    div.transition()
-	.duration(200)
-	.style("opacity", .9);
-    div.html(text)
+    hover_div
+	.html(text)
 	.style("left", (d3.event.pageX) + "px")
 	.style("top", (d3.event.pageY-28)+"px");
+    hover_div
+	.transition()
+	.duration(200)
+	.style("opacity", .9);
+}
+
+function hide_hover_div(d){
+    hover_div.transition()
+	.duration(500)
+	.style("opacity", 0)
 }
 
 // dragging
@@ -413,14 +422,15 @@ function dragended(d) {
     update();
 }
 
-
-
 // drop zone handling
 var dropzones = [{idx: 0, id:"wikipedia", title:"Wikipedia",
 		  action: function(d){window.open("https://en.wikipedia.org/wiki/Special:Search?search="+
 						  d.scientificName.combinedName)
-						 }},
-		 {idx: 1, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
+				     }},
+		 {idx: 1, id:"google-image", title:"Google Image Search",
+		  action: function(d){window.open("https://www.google.com/search?tbm=isch&q="+
+						  d.scientificName.combinedName)}},
+		 {idx: 2, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
 
 var dropzones_container = svg.append("g").attr("id", "dropzones");
 var dropzones_binding = dropzones_container.selectAll(".dropzone")
@@ -428,10 +438,6 @@ var dropzones_binding = dropzones_container.selectAll(".dropzone")
     .enter()
     .append("rect")
     .attr("class", "dropzone")
-    .attr("x", 0)
-    .attr("y", d => d.idx*height/dropzones.length)
-    .attr("width", width/4)
-    .attr("height", height/dropzones.length)
     .attr("opacity", 0.5)
     .attr("stroke-width", 2)
     .attr("stroke", "black")
@@ -444,8 +450,6 @@ var dropzones_labels = dropzones_container.selectAll(".dropzone_label")
     .data(dropzones)
     .enter()
     .append("text")
-    .attr("x", width/8)
-    .attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
     .attr("font-family", "sans-serif")
     .attr("font-size", "20px")
     .attr("fill", "black")
@@ -469,12 +473,21 @@ function selected_dropzone(){
 
 
 function update_dropzones(active){
-    dropzones_binding.attr("fill", d => d.selected ? "yellow" : "grey")
-    dropzones_labels.attr("fill", d => d.selected ? "black" : "white")
-    
+    dropzones_binding
+	.attr("fill", d => d.selected ? "yellow" : "grey")
+        .attr("x", 0)
+	.attr("y", d => d.idx*height/dropzones.length)
+	.attr("width", width/4)
+	.attr("height", height/dropzones.length)
+
+    dropzones_labels
+	.attr("fill", d => d.selected ? "black" : "white")
+        .attr("x", width/8)
+	.attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
+
     if(active != 0){
 	dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
-	dropzones_labels.attr("opacity", active > 0? "visible" : "hidden")
+	dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
     }	
 }
 
@@ -489,5 +502,72 @@ function deselect_dropzone(dz){
     dz.selected = false;
     update_dropzones(0);
 }
+
+function spinner(){    
+    var radius = 50 / 2;
+    var tau = 2 * Math.PI;
+    
+    var arc = d3.arc()
+	.innerRadius(radius*0.5)
+	.outerRadius(radius*0.9)
+	.startAngle(0)
+	.endAngle(0.33*tau)
+
+    var container = svg.append("g")
+    	.attr("id", "spinner-container")
+	.attr("transform", "translate(" + (width - 2*radius) + ","+ (height - 2*radius)+")")
+
+    var path = container
+	.append("path")
+	.attr("d", arc)
+	.attr("fill", "#4D4D4D")
+	.attr("visibility", "hidden")
+	.call(spin, 1500);
+    
+    function spin(selection, duration) {
+	selection.transition()
+            .ease(d3.easeLinear)
+            .duration(duration)
+            .attrTween("transform", function() {
+		return d3.interpolateString("rotate(0)", "rotate(360)");
+            });
+	
+	setTimeout(function() { spin(selection, duration); }, duration);
+    }
+
+    var load_count = 0;
+    return {
+	start_loading: function(){
+	    load_count += 1;
+	    path.attr("visibility", "visible")
+	},
+	done_loading: function(){
+	    load_count -= 1;
+	    if(load_count <= 0){
+		path.attr("visibility", "hidden");
+	    }
+	},
+	relocate: function(){
+	    container.attr("transform",
+			   "translate(" + (width - 2*radius) + ","+ (height - 2*radius)+")")
+	}
+    }
+}
+
+var loading_spinner = spinner();
+
+function redraw_all(){
+    width = document.getElementById("svg-container").clientWidth,
+    height = document.getElementById("svg-container").clientHeight,
+
+    svg.attr("width", width)
+    svg.attr("height", height)
+    svg.attr("viewBox", "0 0 "+width+" "+height)
+    update_dropzones();
+    loading_spinner.relocate();
+    update();
+}
+
+window.addEventListener("resize", redraw_all)
 
 </script>
