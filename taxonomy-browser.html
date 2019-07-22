@@ -54,6 +54,19 @@ div.tooltip {
     pointer-events: none;
 }
 
+div.about {
+    position: absolute;
+    display: inline-block;
+    left: 40%;
+    width: 20%;
+    padding: 20px;
+    top: 30%;
+    background: lightsteelblue;
+    pointer-events: none;
+    border-radius: 12px;
+    z-index: 10;
+}
+
 div.search-bar {
     height: 30px;
     border: 1px;
@@ -67,6 +80,7 @@ div.search-bar {
     top: 30px;
     bottom: 0;
     vertical-align: top;
+    z-index: -1;
 }
 
 .svg-content {
@@ -85,9 +99,42 @@ div.search-bar {
 	<input id="search-input">
 	<button id="search-button" onclick="do_search()">Search</button>
       </div>
-      
+
+    <div id="svg-container" class="svg-container" />
+    
+    <div id="about-div" class="about">
+	<h1>Taxonomy Browser</h1>
+	<p>A simple web application using D3 to browse the taxonomy
+        database provided
+          by <a href=\"https://itis.gov\">ITIS</a>.
+	</p>
+	<p>Source code published under the BSD 3-Clause license
+        available
+        from <a href="https://github.com/jaaron/taxonomy-browser">https://github.com/jaaron/taxonomy-browser</a>	  
+	</p>
+	<h2>Usage</h2>
+	<ul>
+	  <li>Hover over a node to show common and scientific names</li>
+	  <li>Click a node to expand/collapse its children</li>
+	  <li>Shift-Click a node to expand/collapse its ancestors</li>
+	  <li>Use the search bar to search by common name</li>
+	  <li>Lock a node in place by dragging it to a location</li>
+	  <li>Alt-Click a locked node to unlock it
+	  <li>Look up a node on Wikipedia or Google Image Search by
+	    dragging it to the appropriate drop zone</li>
+	  <li>Hide a node by dragging it to the appropriate drop-zone</li>
+	</ul>
+	<p align="right">&copy; J. Aaron Pendergrass 2019</p>
+    </div>
+	    
 <script src="https://d3js.org/d3.v5.min.js"></script>
 <script>
+
+d3.select("#about-div")
+    .transition()
+    .delay(1000)
+    .duration(1000)
+    .style("opacity", 0)
 
 const states = {unloaded:  0,
 		loading:   1,
@@ -198,10 +245,7 @@ function do_search(){
 };
 
 /* Begin layout stuff */
-var svg_container = d3.select("body")
-    .append("div")
-    .attr("id", "svg-container")
-    .classed("svg-container", true);
+var svg_container = d3.select("#svg-container")
 
 var width = document.getElementById("svg-container").clientWidth,
     height = document.getElementById("svg-container").clientHeight,
@@ -433,7 +477,6 @@ function click(d) {
     if (d3.event.defaultPrevented) {
 	return;
     }
-
     if(d3.event.altKey) {
 	d.fx = null;
 	d.fy = null
@@ -663,5 +706,7 @@ function redraw_all(){
 }
 
 window.addEventListener("resize", redraw_all)
+
+    
 
 </script>
