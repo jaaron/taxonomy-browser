@@ -62,14 +62,19 @@ div.about {
     padding: 20px;
     top: 30%;
     background: lightsteelblue;
-    pointer-events: none;
     border-radius: 12px;
     z-index: 10;
+    pointer-events: auto;
+}
+
+div.about-close {
+    position: absolute;
+   display:inline-block;
+    width:100%;
 }
 
 div.search-bar {
-    height: 30px;
-    border: 1px;
+   z-index: 5;
 }
 
 .svg-container {
@@ -80,7 +85,6 @@ div.search-bar {
     top: 30px;
     bottom: 0;
     vertical-align: top;
-    z-index: -1;
 }
 
 .svg-content {
@@ -92,49 +96,60 @@ div.search-bar {
 
 </style>
 <title>Taxonomy Browser</title>
-</head>
+  </head>
 
-    <body>
-      <div class="search-bar">
-	<input id="search-input">
-	<button id="search-button" onclick="do_search()">Search</button>
-      </div>
+  <body>
+    <div class="search-bar">
+      <input id="search-input">
+      <button id="search-button" onclick="do_search()">Search</button>
+    </div>
 
-    <div id="svg-container" class="svg-container" />
+    <div id="svg-container" class="svg-container"></div>
     
     <div id="about-div" class="about">
-	<h1>Taxonomy Browser</h1>
-	<p>A simple web application using D3 to browse the taxonomy
+      <h1>Taxonomy Browser</h1>
+      <p>A simple web application using D3 to browse the taxonomy
         database provided
-          by <a href=\"https://itis.gov\">ITIS</a>.
-	</p>
-	<p>Source code published under the BSD 3-Clause license
+        by <a href="https://www.itis.gov">ITIS</a>.
+      </p>
+      <p>Source code published under the BSD 3-Clause license
         available
         from <a href="https://github.com/jaaron/taxonomy-browser">https://github.com/jaaron/taxonomy-browser</a>	  
-	</p>
-	<h2>Usage</h2>
-	<ul>
-	  <li>Hover over a node to show common and scientific names</li>
-	  <li>Click a node to expand/collapse its children</li>
-	  <li>Shift-Click a node to expand/collapse its ancestors</li>
-	  <li>Use the search bar to search by common name</li>
-	  <li>Lock a node in place by dragging it to a location</li>
-	  <li>Alt-Click a locked node to unlock it
-	  <li>Look up a node on Wikipedia or Google Image Search by
-	    dragging it to the appropriate drop zone</li>
-	  <li>Hide a node by dragging it to the appropriate drop-zone</li>
-	</ul>
-	<p align="right">&copy; J. Aaron Pendergrass 2019</p>
-    </div>
-	    
-<script src="https://d3js.org/d3.v5.min.js"></script>
-<script>
+      </p>
+      <h2>Usage</h2>
+      <ul>
+	<li>Hover over a node to show common and scientific names</li>
+	<li>Click a node to expand/collapse its children</li>
+	<li>Shift-Click a node to expand/collapse its ancestors</li>
+	<li>Use the search bar to search by common name</li>
+	<li>Lock a node in place by dragging it to a location</li>
+	<li>Alt-Click a locked node to unlock it
+	<li>Look up a node on Wikipedia or Google Image Search by
+	  dragging it to the appropriate drop zone</li>
+	<li>Hide a node by dragging it to the appropriate drop-zone</li>
+      </ul>
+      
+      <p align="right">&copy; J. Aaron Pendergrass 2019</p>
+      <div id="about-close-div" class="about-close">
+	<a onclick="closeAbout()">close</a>
+      </div>
 
-d3.select("#about-div")
-    .transition()
-    .delay(1000)
-    .duration(1000)
-    .style("opacity", 0)
+    </div>
+    
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script>
+
+function closeAbout(){
+    d3.select("#about-div")
+	.transition()
+	.duration(500)
+	.style("pointer-events", "none")
+	.style("opacity", 0)
+	.on("end", function(){
+	    d3.select("#about-div")
+		.style("display", "none")
+	})
+}
 
 const states = {unloaded:  0,
 		loading:   1,
