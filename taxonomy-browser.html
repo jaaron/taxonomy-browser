@@ -54,6 +54,18 @@ div.tooltip {
     pointer-events: none;
 }
 
+div.wiki-preview {
+    display: flex;
+}
+div.wiki-extract {
+    flex: 50%;
+    text-align: left;
+    padding: 10px;
+}
+div.wiki-thumbnail {
+    padding: 10px;
+}
+
 div.about {
     position: absolute;
     display: inline-block;
@@ -170,6 +182,11 @@ function def_node(obj){
     obj.children           = [];
     obj.parent             = null;
     return obj;
+}
+
+function get_wikipedia_summary(node){
+    return fetch("https://en.wikipedia.org/api/rest_v1/page/summary/"+node.scientificName.combinedName+"?redirect=true")
+	.then(r => r.json())
 }
 
 function setup_itis(){
@@ -379,9 +396,10 @@ function stroke(d) {
 // Color leaf nodes orange, and packages white or blue.
 function color(d) {
     if(d.taxRank.rankName.startsWith('Species')){
-	return "#808080"
+	return "#808080";
     }else if(d.children_state == states.expanded){
-	return "#c6dbef"
+	console.log("children expanded");
+	return "#c6dbef";
     }
     return "#6ce0a4";
 }
@@ -459,7 +477,6 @@ function toggle_children(d){
 	}).finally(function(){loading_spinner.done_loading()});
     }
     function expand_children(d){
-	d.children_state = states.expanded;
 	var recurse = function(c){
 	    c.visible = true;
 	    if(!c.children_state == states.collapsed){
@@ -467,6 +484,7 @@ function toggle_children(d){
 	    }
 	}
 	d.children.forEach(recurse);
+	d.children_state = states.expanded;
     }
     function collapse_children(d){
 	var recurse = function(c){
@@ -475,7 +493,6 @@ function toggle_children(d){
 	}
 	d.children.forEach(recurse);
 	d.children_state = states.collapsed;
-	update();
     }
 
     if(d.children_state == states.unloaded){
@@ -485,6 +502,7 @@ function toggle_children(d){
     } else if (d.children_state == states.expanded){
 	collapse_children(d)
     }
+    update();
 }
 
     // Toggle children on click.
@@ -509,28 +527,63 @@ var hover_div = d3.select("body").append("div")
     .style("opacity", 0);
 
 function show_hover_div(d){
-    var text;
+    var event = d3.event;
     var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
-    if(eng_name){
-	text = eng_name.commonName +
-	    '<br/>('+d.scientificName.combinedName+')';
-    }else{
-	text = d.scientificName.combinedName;
-    }
-    hover_div
-	.html(text)
-	.style("left", (d3.event.pageX) + "px")
-	.style("top", (d3.event.pageY-28)+"px");
-    hover_div
-	.transition()
-	.duration(200)
-	.style("opacity", .9);
+    hover_div.html("");
+    (d.wiki_preview ? new Promise(function (resolve, reject){resolve(d.wiki_preview)}) : get_wikipedia_summary(d))
+	.then(function(r){
+	    d.wiki_preview = r;
+	    if(eng_name){
+		hover_div.append("h2")
+		    .text(eng_name.commonName);
+		hover_div.append("h3")
+		    .text("(" + d.scientificName.combinedName+")")
+	    }else{
+		hover_div.append("h2")
+		    .text(d.scientificName.combinedName);
+	    }
+	    var layout = hover_div.append("div")
+		.classed("wiki-preview", true);
+	    textw = Math.max(200, Math.min(400, r.thumbnail.width));
+	    layout.append("div")
+		.classed("wiki-extract", true)
+		.append("p")
+		.style("max-width", textw)
+		.text(r.extract)	    
+	    layout.append("div")
+		.classed("wiki-thumbnail", true)
+		.append("img")
+		.attr("src", r.thumbnail.source)
+		.attr("width", r.thumbnail.width)
+		.attr("height", r.thumbnail.height)
+	    
+	}).catch(function(e) {
+	    hover_div.html("")
+	    if(eng_name){
+		hover_div.append("h2")
+		    .text(eng_name.commonName);
+		hover_div.append("h3")
+		    .text("(" + d.scientificName.combinedName+")")
+	    }else{
+		hover_div.append("h2")
+		    .text(d.scientificName.combinedName);
+	    }	    
+	}).then(function (){
+	    hover_div
+		.style("left", (event.pageX) + "px")
+		.style("top", (event.pageY-28)+"px");
+	    hover_div
+		.transition()
+		.duration(200)
+		.style("opacity", .9);
+	});
 }
 
 function hide_hover_div(d){
     hover_div.transition()
 	.duration(500)
 	.style("opacity", 0)
+	.on("end", function (){hover_div.html("");});
 }
 
 // dragging
