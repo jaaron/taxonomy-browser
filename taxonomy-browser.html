@@ -94,7 +94,7 @@ div.search-bar {
     position: fixed;
     left: 0px;
     right: 0;
-    top: 30px;
+    top: 0px;
     bottom: 0;
     vertical-align: top;
 }
@@ -116,7 +116,7 @@ div.search-bar {
       <button id="search-button" onclick="do_search()">Search</button>
     </div>
 
-    <div id="svg-container" class="svg-container"></div>
+    <div id="svg-container" class="svg-container" onclick="donothing()"></div>
     
     <div id="about-div" class="about">
       <h1>Taxonomy Browser</h1>
@@ -150,6 +150,8 @@ div.search-bar {
     
     <script src="https://d3js.org/d3.v5.min.js"></script>
     <script>
+
+function donothing(){}
 
 function closeAbout(){
     d3.select("#about-div")
@@ -348,10 +350,7 @@ function update() {
 	.on("mouseenter", show_hover_div)
 	.on("mouseout", hide_hover_div)
 	.on("contextmenu", function(d){console.log("hello");})
-	.call(d3.drag()
-	      .on("start", dragstarted)
-	      .on("drag",  dragged)
-	      .on("end",   dragended))
+	.call(setup_drag())
 	.merge(node);
 
     // Update the links…
@@ -395,15 +394,36 @@ function stroke(d) {
 
 // Color leaf nodes orange, and packages white or blue.
 function color(d) {
-    if(d.taxRank.rankName.startsWith('Species')){
-	return "#808080";
-    }else if(d.children_state == states.expanded){
-	console.log("children expanded");
-	return "#c6dbef";
-    }
-    return "#6ce0a4";
+    return d3.interpolateWarm(d.taxRank.rankId/250.0);
 }
 
+function draw_legend(){
+    const right_offset = 40;
+    legend = svg.selectAll(".legend-bar")
+	.data(d3.range(250), d => d)
+	.enter()
+	.append("rect")
+	.attr("class", "legend-bar")
+	.attr("x", i => width - (right_offset + i))
+	.attr("y", 10)
+	.attr("width", 5)
+	.attr("height", 20)
+	.style("fill", i => d3.interpolateWarm(i/250.0))
+	.style("stroke", "none");
+    svg.append("text")
+	.attr("text-anchor", "middle")
+	.attr("x", width - (250 + right_offset))
+	.attr("y", 45)
+	.text("Species");
+    svg.append("text")
+	.attr("text-anchor", "middle")
+	.attr("x", width - right_offset)
+	.attr("y", 45)
+	.text("Kingdom");
+    
+}
+draw_legend();
+    
 function add_child(parent, child){
     if(parent.children && !parent.children.includes(child)){
 	parent.children = parent.children.concat(child);
@@ -529,19 +549,20 @@ var hover_div = d3.select("body").append("div")
 function show_hover_div(d){
     var event = d3.event;
     var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
+    var hdr="";
+    if(eng_name){
+	hdr = eng_name.commonName + "(" + d.scientificName.combinedName+")";
+    }else{
+	hdr = d.scientificName.combinedName;
+    }
+    
     hover_div.html("");
     (d.wiki_preview ? new Promise(function (resolve, reject){resolve(d.wiki_preview)}) : get_wikipedia_summary(d))
 	.then(function(r){
 	    d.wiki_preview = r;
-	    if(eng_name){
-		hover_div.append("h2")
-		    .text(eng_name.commonName);
-		hover_div.append("h3")
-		    .text("(" + d.scientificName.combinedName+")")
-	    }else{
-		hover_div.append("h2")
-		    .text(d.scientificName.combinedName);
-	    }
+	    hover_div.append("h2").text(hdr)
+	    hover_div.append("h3")
+		.text("(rank: " + d.taxRank.rankName + ")");
 	    var layout = hover_div.append("div")
 		.classed("wiki-preview", true);
 	    textw = Math.max(200, Math.min(400, r.thumbnail.width));
@@ -559,15 +580,9 @@ function show_hover_div(d){
 	    
 	}).catch(function(e) {
 	    hover_div.html("")
-	    if(eng_name){
-		hover_div.append("h2")
-		    .text(eng_name.commonName);
-		hover_div.append("h3")
-		    .text("(" + d.scientificName.combinedName+")")
-	    }else{
-		hover_div.append("h2")
-		    .text(d.scientificName.combinedName);
-	    }	    
+	    hover_div.append("h2").text(hdr)
+	    hover_div.append("h3")
+		.text("(rank: " + d.taxRank.rankName + ")");
 	}).then(function (){
 	    hover_div
 		.style("left", (event.pageX) + "px")
@@ -587,33 +602,39 @@ function hide_hover_div(d){
 }
 
 // dragging
-function dragstarted(d) {
-    d3.event.sourceEvent.stopPropagation();
-    if (!d3.event.active) simulation.alphaTarget(0.3).restart();
-    d.x = d.x;
-    d.y = d.y;
-    dropzones.show()   
-}
+function setup_drag(){
+    function dragstarted(d) {
+	d3.event.sourceEvent.stopPropagation();
+	if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+	d.x = d.x;
+	d.y = d.y;
+	dropzones.show()   
+    }
 
-function dragged(d) {
-    d.fx = d3.event.x;
-    d.fy = d3.event.y;
-}
-
-function dragended(d) {
-    if (!d3.event.active) simulation.alphaTarget(0);
-    dz = dropzones.selected();
-    if(dz){
-	console.log("in drop zone");
-	dz.action(d);
-	d.fx = null;
-	d.fy = null;
-    }else if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
+    function dragged(d) {
 	d.fx = d3.event.x;
 	d.fy = d3.event.y;
     }
-    dropzones.hide();
-    update();
+
+    function dragended(d) {
+	if (!d3.event.active) simulation.alphaTarget(0);
+	dz = dropzones.selected();
+	if(dz){
+	    console.log("in drop zone");
+	    dz.action(d);
+	    d.fx = null;
+	    d.fy = null;
+	}else if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
+	    d.fx = d3.event.x;
+	    d.fy = d3.event.y;
+	}
+	dropzones.hide();
+	update();
+    }
+    return d3.drag()
+	.on("start", dragstarted)
+	.on("drag",  dragged)
+	.on("end",   dragended);
 }
 
 function setup_dropzones(){
@@ -770,6 +791,7 @@ function redraw_all(){
     svg.attr("viewBox", "0 0 "+width+" "+height)
     dropzones.update();
     loading_spinner.relocate();
+    draw_legend();
     update();
 }
 
