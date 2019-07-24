@@ -6,7 +6,7 @@ taxonomy webservice. Mostly an excuse to play with D3. Just open
 `taxonomy-browser.html` in a browser.
 
 Live version hosted  at
-https://master.d1qjf7cjqshaio.amplifyapp.com/taxonomy-browser.html
+https://jaaron.github.io/taxonomy-browser/taxonomy-browser.html
 
 Interactions include:
 * Hover over a node to show wikipedia page preview
