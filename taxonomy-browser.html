@@ -499,7 +499,7 @@ function toggle_children(d){
     function expand_children(d){
 	var recurse = function(c){
 	    c.visible = true;
-	    if(!c.children_state == states.collapsed){
+	    if(c.children_state != states.collapsed){
 		c.children.forEach(recurse);
 	    }
 	}
@@ -551,7 +551,7 @@ function show_hover_div(d){
     var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
     var hdr="";
     if(eng_name){
-	hdr = eng_name.commonName + "(" + d.scientificName.combinedName+")";
+	hdr = eng_name.commonName + " (" + d.scientificName.combinedName+")";
     }else{
 	hdr = d.scientificName.combinedName;
     }
