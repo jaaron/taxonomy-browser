@@ -397,33 +397,47 @@ function color(d) {
     return d3.interpolateWarm(d.taxRank.rankId/250.0);
 }
 
-function draw_legend(){
+function setup_legend(){
     const right_offset = 40;
-    legend = svg.selectAll(".legend-bar")
+    legend_bar = svg.selectAll(".legend-bar")
 	.data(d3.range(250), d => d)
 	.enter()
 	.append("rect")
-	.attr("class", "legend-bar")
+	.classed("legend-bar", true)
 	.attr("x", i => width - (right_offset + i))
 	.attr("y", 10)
 	.attr("width", 5)
 	.attr("height", 20)
 	.style("fill", i => d3.interpolateWarm(i/250.0))
 	.style("stroke", "none");
-    svg.append("text")
-	.attr("text-anchor", "middle")
-	.attr("x", width - (250 + right_offset))
-	.attr("y", 45)
-	.text("Species");
-    svg.append("text")
-	.attr("text-anchor", "middle")
-	.attr("x", width - right_offset)
-	.attr("y", 45)
-	.text("Kingdom");
     
+    legend_labels = svg.selectAll(".legend-label")
+	.data([{l: "Species", x: (250 + right_offset), y: 45},
+	       {l: "Kingdom", x: right_offset, y: 45}])
+	.enter().append("text")
+	.classed("legend-label", true)
+    
+    function update(){
+	legend_bar
+	    .attr("x", i => width - (right_offset + i))
+	    .attr("y", 10)
+	    .attr("width", 5)
+	    .attr("height", 20)
+	    .style("fill", i => d3.interpolateWarm(i/250.0))
+	    .style("stroke", "none");
+	
+
+	legend_labels
+	    .attr("text-anchor", "middle")
+	    .attr("x", d => width - d.x)
+	    .attr("y", d => d.y)
+	    .text(d => d.l);
+    }	
+    update();
+    return update;
 }
-draw_legend();
-    
+const legend = setup_legend();
+
 function add_child(parent, child){
     if(parent.children && !parent.children.includes(child)){
 	parent.children = parent.children.concat(child);
@@ -791,7 +805,7 @@ function redraw_all(){
     svg.attr("viewBox", "0 0 "+width+" "+height)
     dropzones.update();
     loading_spinner.relocate();
-    draw_legend();
+    legend();
     update();
 }
 
