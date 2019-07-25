@@ -112,6 +112,16 @@ div.search-bar {
 
   <body>
     <div class="search-bar">
+      <select name="search-field">
+	<option value="common-name">Common Name</option>
+	<option value="scientific-name">Scientific Name</option>
+      </select>
+      <select name="search-match-style">
+	<option value="contains">Contains</option>
+	<option value="starts-with">Starts With</option>
+	<option value="ends-with">Ends With</option>
+	<option value="is">Is</option>
+	</select>
       <input id="search-input">
       <button id="search-button" onclick="do_search()">Search</button>
     </div>
@@ -195,11 +205,25 @@ function setup_itis(){
     const cors_anywhere			= 'https://cors-anywhere.herokuapp.com/'
     const base_url			= cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/'
     const search_by_cn_url		= base_url + 'searchByCommonName'
+    const search_urls = {
+	'common-name': {
+	    'begins-with': base_url + 'searchByCommonNameBeginsWith',
+	    'ends-with': base_url + 'searchByCommonNameEndsWith',
+	    'contains': base_url + 'searchByCommonName',
+	    'is': base_url + 'getITISTermsFromCommonName'
+	},
+	'scientific-name': {
+	    'begins-with': base_url + 'searchByScientificNameBeginsWith',
+	    'ends-with': base_url + 'searchByScientificNameEndsWith',
+	    'contains': base_url + 'searchByScientificName',
+	    'is': base_url + 'getITISTermsFromScientificName'
+	}
+    }
     const get_record_by_tsn_url		= base_url + 'getFullRecordFromTSN'
     const get_children_by_tsn_url	= base_url + 'getHierarchyDownFromTSN'
     const get_full_hierarchy_by_tsn_url = base_url + 'getFullHierarchyFromTSN'
 
-    function search_for_name(cn){
+    function search_for_name(cn, options){
 	return fetch(search_by_cn_url+"?srchKey="+cn)
 	    .then(r    => r.json())
 	    .then(js   => js.commonNames)
@@ -265,10 +289,13 @@ itis.get_root().then(function(p){
 })
 
 function do_search(){
+    var search_field = document.getElementById("search-field")
+    var search_match_style = document.getElementById("search-match-style")
     var search_input = document.getElementById("search-input")
     console.log("searching for "+search_input.value);
     loading_spinner.start_loading();
-    itis.search_for_name(search_input.value)
+    itis.search_for_name(search_input.value, {field: search_field.value,
+					      match_style: search_match_style.value})
 	.then(function(xs){
 	    if(xs){
 		xs.forEach(def_node);
