@@ -94,9 +94,10 @@ div.search-bar {
     position: fixed;
     left: 0px;
     right: 0;
-    top: 0px;
+    top: 25px;
     bottom: 0;
     vertical-align: top;
+    z-index: 0;
 }
 
 .svg-content {
@@ -111,22 +112,21 @@ div.search-bar {
   </head>
 
   <body>
+    <div id="svg-container" class="svg-container" onclick="donothing()"></div>
     <div class="search-bar">
-      <select name="search-field">
+      <select class="search-bar" id="search-field">
 	<option value="common-name">Common Name</option>
 	<option value="scientific-name">Scientific Name</option>
       </select>
-      <select name="search-match-style">
+      <select class="search-bar" id="search-match-style">
 	<option value="contains">Contains</option>
 	<option value="starts-with">Starts With</option>
 	<option value="ends-with">Ends With</option>
 	<option value="is">Is</option>
 	</select>
-      <input id="search-input">
-      <button id="search-button" onclick="do_search()">Search</button>
+      <input class="search-bar" id="search-input">
+      <button class="search-bar" id="search-button" onclick="do_search()">Search</button>
     </div>
-
-    <div id="svg-container" class="svg-container" onclick="donothing()"></div>
     
     <div id="about-div" class="about">
       <h1>Taxonomy Browser</h1>
@@ -202,36 +202,55 @@ function get_wikipedia_summary(node){
 }
 
 function setup_itis(){
-    const cors_anywhere			= 'https://cors-anywhere.herokuapp.com/'
-    const base_url			= cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/'
-    const search_by_cn_url		= base_url + 'searchByCommonName'
-    const search_urls = {
-	'common-name': {
-	    'begins-with': base_url + 'searchByCommonNameBeginsWith',
-	    'ends-with': base_url + 'searchByCommonNameEndsWith',
-	    'contains': base_url + 'searchByCommonName',
-	    'is': base_url + 'getITISTermsFromCommonName'
-	},
-	'scientific-name': {
-	    'begins-with': base_url + 'searchByScientificNameBeginsWith',
-	    'ends-with': base_url + 'searchByScientificNameEndsWith',
-	    'contains': base_url + 'searchByScientificName',
-	    'is': base_url + 'getITISTermsFromScientificName'
-	}
-    }
-    const get_record_by_tsn_url		= base_url + 'getFullRecordFromTSN'
-    const get_children_by_tsn_url	= base_url + 'getHierarchyDownFromTSN'
-    const get_full_hierarchy_by_tsn_url = base_url + 'getFullHierarchyFromTSN'
+    const cors_anywhere			= 'https://cors-anywhere.herokuapp.com/';
+    const base_url			= cors_anywhere+'https://www.itis.gov/ITISWebService/jsonservice/';
+    const search_by_cn_url		= base_url + 'searchByCommonName';
+    const search_by_sn_url		= base_url + 'searchByScientificName';
+    const get_record_by_tsn_url		= base_url + 'getFullRecordFromTSN';
+    const get_children_by_tsn_url	= base_url + 'getHierarchyDownFromTSN';
+    const get_full_hierarchy_by_tsn_url = base_url + 'getFullHierarchyFromTSN';
 
-    function search_for_name(cn, options){
-	return fetch(search_by_cn_url+"?srchKey="+cn)
+    function search_for_common_name(q, mode){
+	var post_filter = cns => cns
+	var url_suffix = "";
+	if(mode == "starts-with"){
+	    url_suffix = "BeginsWith";
+	}else if(mode == "ends-with"){
+	    url_suffix = "EndsWith";
+	}else if(mode == "is"){
+	    post_filter = cns => cns.filter(x => x.commonName == q)
+	}else if(mode == "contains"){
+	}else{
+	    throw("Unknown search mode "+mode);
+	}
+	return fetch(search_by_cn_url+url_suffix+"?srchKey="+q)
 	    .then(r    => r.json())
 	    .then(js   => js.commonNames)
+	    .then(post_filter)
 	    .then(cns  => cns.map(cn => cn.tsn))
 	    .then(tsns => tsns.map(get_record_by_tsn))
-	    .then(ps   => Promise.all(ps))
+	    .then(ps   => Promise.all(ps));
     }
 
+    function search_for_scientific_name(q, mode){
+	return fetch(search_by_sn_url+"?srchKey="+q)
+	    .then(r    => r.json())
+	    .then(js   => js.scientificNames)
+	    .then(function(sns){
+		if(mode == "starts-with"){
+		    return sns.filter(sn => sn.combinedName.startsWith(q));
+		}else if(mode == "ends-with"){
+		    return sns.filter(sn => sn.combinedName.endsWith(q));
+		}else if(mode == "is"){
+		    return sns.filter(sn => sn == q);
+		}
+		return sns;
+	    })
+	    .then(sns  => sns.map(sn => sn.tsn))
+	    .then(tsns => tsns.map(get_record_by_tsn))
+	    .then(ps   => Promise.all(ps));
+    }
+	
     function get_record_by_tsn(tsn){
 	return fetch(get_record_by_tsn_url +"?tsn="+tsn)
 	    .then(r => r.json())
@@ -272,7 +291,8 @@ function setup_itis(){
     function get_root(){return get_record_by_tsn(animalia_tsn);}
     
     return {
-	search_for_name:   search_for_name,
+	search_for_common_name:   search_for_common_name,
+	search_for_scientific_name:   search_for_scientific_name,
 	get_record_by_tsn: get_record_by_tsn,
 	get_parent:        get_parent,
 	get_lineage:       get_lineage,
@@ -288,20 +308,23 @@ itis.get_root().then(function(p){
     update();
 })
 
-function do_search(){
-    var search_field = document.getElementById("search-field")
-    var search_match_style = document.getElementById("search-match-style")
-    var search_input = document.getElementById("search-input")
-    console.log("searching for "+search_input.value);
+function do_search(){    
+    var search_field = document.getElementById("search-field").value;
+    var search_match_style = document.getElementById("search-match-style").value;
+    var search_input = document.getElementById("search-input").value;
+    var p_xs;
     loading_spinner.start_loading();
-    itis.search_for_name(search_input.value, {field: search_field.value,
-					      match_style: search_match_style.value})
-	.then(function(xs){
-	    if(xs){
-		xs.forEach(def_node);
-		update();
-	    }
-	}).catch(e => null)
+    if(search_field == "scientific-name"){
+	p_xs = itis.search_for_scientific_name(search_input, search_match_style);
+    }else{
+	p_xs = itis.search_for_common_name(search_input, search_match_style);
+    }
+    p_xs.then(function(xs){
+	if(xs){
+	    xs.forEach(def_node);
+	    update();
+	}
+    }).catch(e => null)
 	.finally(function(){loading_spinner.done_loading()});
 };
 
