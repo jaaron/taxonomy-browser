@@ -85,6 +85,34 @@ div.about-close {
     width:100%;
 }
 
+div.permalink {
+    display: none;
+    pointer-events: none;
+    position: absolute;
+    z-index: 10;
+    background: lightsteelblue;
+    left: 25%;
+    width: 50%;
+    border-radius: 12px;
+    padding: 20px;
+    top: 5%;
+    overflow-wrap: break-word;
+}
+
+div.permalink-close {
+    width: 100%;
+    text-align: center;
+}
+
+div.permalinklink {
+    position: absolute;
+    display: inline-block;
+    z-index: 30;
+    bottom: 10px;
+    left: 20px;
+    pointer-events: auto;
+}
+
 div.search-bar {
    z-index: 5;
 }
@@ -100,11 +128,13 @@ div.search-bar {
     z-index: 0;
 }
 
+
 .svg-content {
   display: inline-block;
   position: absolute;
   top: 0;
   left: 0;
+  z-index: 0;    
 }
 
 </style>
@@ -157,14 +187,23 @@ div.search-bar {
       </div>
 
     </div>
-    
+
+    <div id="permalink" class="permalink">
+      <a href="" id="permalink-link"></a>
+      <div id="permalink-close-div" class="permalink-close">
+	<a onclick="closePermalink()">close</a>
+      </div>
+    </div>
+    <div id="permalinklink" class="permalinklink">
+      <a onclick="showPermalink()">permalink</a>
+    </div>
     <script src="https://d3js.org/d3.v5.min.js"></script>
     <script>
 
 function donothing(){}
 
-function closeAbout(){
-    d3.select("#about-div")
+function closeDiv(div_id){
+    d3.select("#"+div_id)
 	.transition()
 	.duration(500)
 	.style("pointer-events", "none")
@@ -173,6 +212,30 @@ function closeAbout(){
 	    d3.select("#about-div")
 		.style("display", "none")
 	})
+}
+
+function showDiv(div_id){
+    d3.select("#"+div_id)
+    	.style("display", "inline-block")
+	.transition(500)
+	.style("pointer-events", "auto")
+	.style("opacity", 1)
+}
+
+function showPermalink(){
+    var href = window.location.href+"?init="+btoaUTF16(nodes_to_json())
+    d3.select("#permalink-link")
+	.attr("href", href)
+	.text(href)
+    showDiv("permalink")
+}
+
+function closePermalink(){
+    closeDiv("permalink")
+}
+
+function closeAbout(){
+    closeDiv("about-div")
 }
 
 const states = {unloaded:  0,
@@ -303,10 +366,54 @@ function setup_itis(){
 
 const itis = setup_itis();
 
-itis.get_root().then(function(p){
-    p = def_node(p)
-    update();
-})
+function load_nodes_from_json(s){
+    var nodes = JSON.parse(s)
+    all_nodes = {}
+    nodes.forEach(function(n){
+	all_nodes[n.id] = n
+    });
+    nodes.forEach(function(n){
+	n.children = n.children.map(child_tsn => all_nodes[child_tsn])
+	n.parent   = all_nodes[n.parent]
+    })
+}
+
+function nodes_to_json(){
+    var nodes = Object.values(all_nodes);
+    var new_nodes = nodes.map(function(n){
+	return {
+	    id:              n.id,
+	    tsn:             n.tsn,
+	    commonNames:     n.commonNames,
+	    scientificName:  n.scientificName,
+	    children_state:  n.children_state,
+	    children:        n.children.map(c => c.tsn),    
+	    ancestors_state: n.ancestors_state,
+	    parent:          n.parent ? n.parent.tsn : null,
+	    taxRank:         n.taxRank,
+	    x:               n.x,
+	    y:               n.y,
+	    fx:              n.fx,
+	    fy:              n.fy,
+	    visible:         n.visible
+	};
+    })
+    var s = JSON.stringify(new_nodes);
+    return s;
+}
+
+function btoaUTF16 (sString) {
+    var aUTF16CodeUnits = new Uint16Array(sString.length);
+    Array.prototype.forEach.call(aUTF16CodeUnits, function (el, idx, arr) { arr[idx] = sString.charCodeAt(idx); });
+    return btoa(String.fromCharCode.apply(null, new Uint8Array(aUTF16CodeUnits.buffer)));
+}
+
+function atobUTF16 (sBase64) {
+    var sBinaryString = atob(sBase64), aBinaryView = new Uint8Array(sBinaryString.length);
+    Array.prototype.forEach.call(aBinaryView, function (el, idx, arr) { arr[idx] = sBinaryString.charCodeAt(idx); });
+    return String.fromCharCode.apply(null, new Uint16Array(aBinaryView.buffer));
+
+}
 
 function do_search(){    
     var search_field = document.getElementById("search-field").value;
@@ -340,9 +447,7 @@ var svg = svg_container
     .attr("viewBox", "0 0 "+width+" "+height)
     .classed("svg-content", true);
 
-var nodes = []
-var links = []
-var simulation = d3.forceSimulation(nodes)
+var simulation = d3.forceSimulation(Object.values(all_nodes))
     .force("charge", d3.forceManyBody().strength(-1000))
     .force("link", d3.forceLink(link).distance(200))
     .force("x", d3.forceX())
@@ -360,11 +465,11 @@ var zoom = d3.zoom()
 svg.call(zoom);
 
 const max_node_radius = 50;
-const min_node_radius = 10;
-
+const min_node_radius = 10;		 
+	
 function update() {
-    nodes = Object.values(all_nodes).filter(n => n.visible)
-    links = nodes.reduce(function(acc, n){
+    var nodes = Object.values(all_nodes).filter(n => n.visible)
+    var links = nodes.reduce(function(acc, n){
 	if(n.children){
 	    return acc.concat(n.children
 			      .filter(c => c.visible)
@@ -858,6 +963,22 @@ function redraw_all(){
     legend();
     update();
 }
+
+function init(){
+    var urlParams = new URLSearchParams(window.location.search);
+    if(urlParams.get('init')){
+	node_string = atobUTF16(urlParams.get('init'));
+	load_nodes_from_json(node_string);
+	redraw_all();
+    }else{
+	itis.get_root().then(function(p){
+	    p = def_node(p)
+	    redraw_all();
+	})
+    }
+}
+
+init();
 
 window.addEventListener("resize", redraw_all)
 
