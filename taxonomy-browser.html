@@ -925,8 +925,9 @@ function spinner(){
             .attrTween("transform", function() {
 		return d3.interpolateString("rotate(0)", "rotate(360)");
             });
-	
-	setTimeout(function() { spin(selection, duration); }, duration);
+	if(selection.attr("visibility") != "hidden"){
+	    setTimeout(function() { spin(selection, duration); }, duration);
+	}
     }
 
     var load_count = 0;
@@ -934,6 +935,7 @@ function spinner(){
 	start_loading: function(){
 	    load_count += 1;
 	    path.attr("visibility", "visible")
+		.call(spin, 1500)
 	},
 	done_loading: function(){
 	    load_count -= 1;
