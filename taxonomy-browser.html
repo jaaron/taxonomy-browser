@@ -195,9 +195,10 @@ div.search-bar {
       </div>
     </div>
     <div id="permalinklink" class="permalinklink">
-      <a onclick="showPermalink()">permalink</a>
+      <a onclick="showPermalink()">shareable link</a>
     </div>
     <script src="https://d3js.org/d3.v5.min.js"></script>
+    <script src="lz-string.js"></script>
     <script>
 
 function donothing(){}
@@ -223,7 +224,8 @@ function showDiv(div_id){
 }
 
 function showPermalink(){
-    var href = window.location.href+"?init="+btoaUTF16(nodes_to_json())
+    var url = [location.protocol, '//', location.host, location.pathname].join('');
+    var href = url+"?init="+encode(nodes_to_json())
     d3.select("#permalink-link")
 	.attr("href", href)
 	.text(href)
@@ -384,7 +386,7 @@ function nodes_to_json(){
 	return {
 	    id:              n.id,
 	    tsn:             n.tsn,
-	    commonNames:     n.commonNames,
+	    commonNameList:  n.commonNameList,
 	    scientificName:  n.scientificName,
 	    children_state:  n.children_state,
 	    children:        n.children.map(c => c.tsn),    
@@ -402,17 +404,23 @@ function nodes_to_json(){
     return s;
 }
 
-function btoaUTF16 (sString) {
-    var aUTF16CodeUnits = new Uint16Array(sString.length);
-    Array.prototype.forEach.call(aUTF16CodeUnits, function (el, idx, arr) { arr[idx] = sString.charCodeAt(idx); });
+function encode (sString) {
+/*    var cString = LZString.compress(sString);
+    var aUTF16CodeUnits = new Uint16Array(cString.length);
+    Array.prototype.forEach.call(aUTF16CodeUnits, function (el, idx, arr) { arr[idx] = cString.charCodeAt(idx); });
     return btoa(String.fromCharCode.apply(null, new Uint8Array(aUTF16CodeUnits.buffer)));
+*/
+    return LZString.compressToEncodedURIComponent(sString);
 }
 
-function atobUTF16 (sBase64) {
+function decode (sBase64) {
+/*
     var sBinaryString = atob(sBase64), aBinaryView = new Uint8Array(sBinaryString.length);
     Array.prototype.forEach.call(aBinaryView, function (el, idx, arr) { arr[idx] = sBinaryString.charCodeAt(idx); });
-    return String.fromCharCode.apply(null, new Uint16Array(aBinaryView.buffer));
-
+    var compressed = String.fromCharCode.apply(null, new Uint16Array(aBinaryView.buffer));
+    return LZString.decompress(compressed);
+*/
+    return LZString.decompressFromEncodedURIComponent(sBase64);
 }
 
 function do_search(){    
@@ -969,7 +977,7 @@ function redraw_all(){
 function init(){
     var urlParams = new URLSearchParams(window.location.search);
     if(urlParams.get('init')){
-	node_string = atobUTF16(urlParams.get('init'));
+	node_string = decode(urlParams.get('init'));
 	load_nodes_from_json(node_string);
 	redraw_all();
     }else{
