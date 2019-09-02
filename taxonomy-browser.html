@@ -69,10 +69,10 @@ div.wiki-thumbnail {
 div.about {
     position: absolute;
     display: inline-block;
-    left: 40%;
-    width: 20%;
+    left: 20%;
+    width: 60%;
     padding: 20px;
-    top: 30%;
+    top: 15%;
     background: lightsteelblue;
     border-radius: 12px;
     z-index: 10;
@@ -452,6 +452,7 @@ var width = document.getElementById("svg-container").clientWidth,
 
 var svg = svg_container
     .append("svg")
+    .attr("id", "svg-content")
     .attr("viewBox", "0 0 "+width+" "+height)
     .classed("svg-content", true);
 
@@ -474,7 +475,9 @@ svg.call(zoom);
 
 const max_node_radius = 50;
 const min_node_radius = 10;		 
-	
+
+const is_touchable = 'ontouchstart' in window
+
 function update() {
     var nodes = Object.values(all_nodes).filter(n => n.visible)
     var links = nodes.reduce(function(acc, n){
@@ -507,14 +510,28 @@ function update() {
 	.style("stroke", stroke)
 	.attr("cx", d => d.x)
 	.attr("cy", d => d.y)
-	.attr("r", d => 30) /* Math.min(Math.max(min_node_radius, 30),
-				 max_node_radius)) */
-	.on("click", click)
-	.on("mouseenter", show_hover_div)
-	.on("mouseout", hide_hover_div)
-	.on("contextmenu", function(d){console.log("hello");})
-	.call(setup_drag())
-	.merge(node);
+	.attr("r", d => 30)
+	.merge(node) /* Math.min(Math.max(min_node_radius, 30),
+			max_node_radius)) */
+
+    if(is_touchable){
+	node = node.on("touchstart", handle_node_touch_start)
+	    .on("touchmove", handle_node_touch_move)
+	    .on("touchend", handle_node_touch_end)
+	    .on("click", function(n){
+		if(hover_div.style("opacity") == "0" ||
+		   (((n.x - hover_div.left)*(n.x - hover_div.left) + (n.y - (hover_div.top + 28))*(n.y - (hover_div.top + 28)) ) > 30)){
+		    show_hover_div(n);
+		}else{
+		    hide_hover_div(n);
+		}
+	    })
+    }else{
+	node = node.on("click", click)    
+	    .on("mouseenter", show_hover_div)
+	    .on("mouseout", hide_hover_div)
+	    .call(setup_drag())
+    }
 
     // Update the links…
     link = link.data(links, d => d.target.id);
@@ -778,6 +795,38 @@ function hide_hover_div(d){
 	.on("end", function (){hover_div.html("");});
 }
 
+// touch
+function handle_node_touch_start(d){
+	if (!d3.event.active) simulation.alphaTarget(0.3).restart();
+	d.x = d.x;
+	d.y = d.y;
+	dropzones.show(d)   
+    }
+
+function handle_node_touch_move(d){
+    touches = d3.touches(document.getElementById("svg-content"))
+    d.fx = d3.event.x;
+    d.fy = d3.event.y;
+    dropzones.select_containing(touches[0][0], touches[0][1]);
+}
+
+function handle_node_touch_end(d){
+    if (!d3.event.active) simulation.alphaTarget(0);
+    dz = dropzones.selected();
+    if(dz){
+	dz.action(d);
+	d.fx = null;
+	d.fy = null;
+    }else if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
+	d.fx = d3.event.x;
+	d.fy = d3.event.y;
+    }
+    dropzones.deselect_all();
+    dropzones.hide();
+    update();
+}
+
+
 // dragging
 function setup_drag(){
     function dragstarted(d) {
@@ -785,7 +834,7 @@ function setup_drag(){
 	if (!d3.event.active) simulation.alphaTarget(0.3).restart();
 	d.x = d.x;
 	d.y = d.y;
-	dropzones.show()   
+	dropzones.show(d)
     }
 
     function dragged(d) {
@@ -797,7 +846,6 @@ function setup_drag(){
 	if (!d3.event.active) simulation.alphaTarget(0);
 	dz = dropzones.selected();
 	if(dz){
-	    console.log("in drop zone");
 	    dz.action(d);
 	    d.fx = null;
 	    d.fy = null;
@@ -816,14 +864,32 @@ function setup_drag(){
 
 function setup_dropzones(){
     // drop zone handling
-    var dropzones = [{idx: 0, id:"wikipedia", title:"Wikipedia",
+    var ctr = 0
+    var dropzones = [{idx: ctr++, id:"wikipedia", title:"Wikipedia",
 		      action: function(d){window.open("https://en.wikipedia.org/wiki/Special:Search?search="+
-						      d.scientificName.combinedName)
-					 }},
-		     {idx: 1, id:"google-image", title:"Google Image Search",
+						      d.scientificName.combinedName)}},
+		     {idx: ctr++, id:"google-image", title:"Google Image Search",
 		      action: function(d){window.open("https://www.google.com/search?tbm=isch&q="+
 						      d.scientificName.combinedName)}},
-		     {idx: 2, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
+		     {idx: ctr++, id: "toggle-children",
+		      title: function(n){
+			  if(n && n.children_state == states.expanded){
+			      return "Hide Children";
+			  }
+			  return "Expand Children";
+		      },
+		      action: toggle_children
+		     },
+		     {idx: ctr++, id: "toggle-ancestors", title: function(n){
+			 if(n && n.ancestors_state == states.expanded){
+			     return "Hide Ancestors";
+			 }
+			 return "Expand Ancestors"
+		     },
+		      action: toggle_ancestors},
+		     {idx: ctr++, id:"unlock", title:"Unlock",
+		      action: function(d){d.fx = null; d.fy = null;}},
+		     {idx: ctr++, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
     
     var dropzones_container = svg.append("g").attr("id", "dropzones");
     var dropzones_binding = dropzones_container.selectAll(".dropzone")
@@ -848,12 +914,16 @@ function setup_dropzones(){
 	.attr("fill", "black")
 	.attr("pointer-events", "none")
 	.attr("text-anchor", "middle")
-	.text(d => d.title)
 
+    function dz_x(d){return 0;}
+    function dz_w(d){return width/4;}
+    function dz_y(d){return d.idx*dz_h();}
+    function dz_h(d){return height/dropzones.length;}
+    
     update_dropzones()
 
-    function show_dropzones(){
-	update_dropzones(1)
+    function show_dropzones(n){
+	update_dropzones(1,n)
     }
 
     function hide_dropzones(){
@@ -865,23 +935,40 @@ function setup_dropzones(){
     }
 
 
-    function update_dropzones(active){
+    function update_dropzones(active, n){
 	dropzones_binding
 	    .attr("fill", d => d.selected ? "yellow" : "grey")
-            .attr("x", 0)
-	    .attr("y", d => d.idx*height/dropzones.length)
-	    .attr("width", width/4)
-	    .attr("height", height/dropzones.length)
-
+            .attr("x", dz_x)
+	    .attr("y", dz_y)
+	    .attr("width", dz_w)
+	    .attr("height", dz_h)
+	
 	dropzones_labels
 	    .attr("fill", d => d.selected ? "black" : "white")
             .attr("x", width/8)
 	    .attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
 
+	if(n){
+	    dropzones_labels.text(d => d.title instanceof Function ? d.title(n) : d.title)
+	}
+	
 	if(active != 0){
 	    dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
 	    dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
-	}	
+	}
+    }
+
+    function select_dropzone_containing(x, y){
+	dropzones.forEach(function(d){
+	    if( (0 <= x) && (width/4 > x) &&
+		( d.idx*height/dropzones.length <= y &&
+		  (d.idx+1)*height/dropzones.length > y) ){
+		d.selected = true;
+	    }else{
+		d.selected = false;
+	    }
+	});
+	update_dropzones(0)
     }
 
     function select_dropzone(dz){
@@ -896,12 +983,19 @@ function setup_dropzones(){
 	update_dropzones(0);
     }
 
-    return{ update: update_dropzones,
-	    select: select_dropzone,
-	    deselect: deselect_dropzone,
-	    show: show_dropzones,
-	    hide: hide_dropzones,
-	    selected: selected_dropzone
+    function deselect_all_dropzones(){
+	dropzones.forEach(function(d){d.selected = false;});
+    }
+    
+    return{ update:            update_dropzones,
+	    select:            select_dropzone,
+	    select_containing: select_dropzone_containing,
+	    deselect:          deselect_dropzone,
+	    deselect_all:      deselect_all_dropzones,
+	    show:              show_dropzones,
+	    hide:              hide_dropzones,
+	    selected:          selected_dropzone,
+	    get:               function(){return dropzones;}
 	  }
 }
 
