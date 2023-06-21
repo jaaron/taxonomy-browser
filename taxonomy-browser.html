@@ -43,6 +43,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
   stroke-width: 1.5px;
 }
 
+.arrowhead {
+	fill: #9ecae1;
+	stroke-width: 1px;
+}
+
 div.tooltip {
     position: absolute;			
     text-align: center;			
@@ -253,8 +258,8 @@ const states = {unloaded:  0,
 function def_node(obj){
     tmp = all_nodes[obj.tsn];
     if(tmp){
-	tmp.visible = true;
-	return tmp;
+		tmp.visible = true;
+		return tmp;
     }
     all_nodes[obj.tsn]     = obj;
     obj.id                 = obj.tsn;
@@ -435,16 +440,16 @@ function do_search(){
     var p_xs;
     loading_spinner.start_loading();
     if(search_field == "scientific-name"){
-	p_xs = itis.search_for_scientific_name(search_input, search_match_style);
+		p_xs = itis.search_for_scientific_name(search_input, search_match_style);
     }else{
-	p_xs = itis.search_for_common_name(search_input, search_match_style);
+		p_xs = itis.search_for_common_name(search_input, search_match_style);
     }
     p_xs.then(function(xs){
-	if(xs){
-	    xs.forEach(def_node);
-	    update();
-	}
-    }).catch(e => null)
+		if(xs){
+		    xs.forEach(def_node);
+	    	update();
+		}
+    	}).catch(e => null)
 	.finally(function(){loading_spinner.done_loading()});
 };
 
@@ -457,6 +462,7 @@ var width = document.getElementById("svg-container").clientWidth,
 
 var svg = svg_container
     .append("svg")
+	.attr("xmlns", "http://www.w3.org/2000/svg")
     .attr("id", "svg-content")
     .attr("viewBox", "0 0 "+width+" "+height)
     .classed("svg-content", true);
@@ -468,6 +474,25 @@ var simulation = d3.forceSimulation(Object.values(all_nodes))
     .force("y", d3.forceY())
     .alphaTarget(1)
     .on("tick", ticked);
+
+// create a marker ref for arrowheads
+var defs = svg.append("defs")
+var marker = defs.append("marker")
+		.attr("id", "arrow")
+		.attr("class", "arrowhead")
+		// the links actually go all the way to the center of the 
+		// destination nodes (r = 30), the refX/refY coordinates
+		// specifies where in the viewbox the end of the line should
+		// be placed...we want to the right of the actual arrow so
+		// that the arrow gets backed up to where it's tip will align
+		// with the edge of the destination node.
+		.attr("refX", "45")
+		.attr("refY", "5")		
+		.attr("orient", "auto")
+		.attr("markerWidth", "6")
+		.attr("markerHeight", "6")
+		.attr("viewBox", "0 0 10 10");
+marker.append("path").attr("d", "M 0 0 L 10 5 L 0 10 z");
 
 var container = svg.append("g").attr("transform", "translate(" + width / 2 + "," + height / 2 + ")");
 var link      = container.selectAll(".link");
@@ -551,6 +576,7 @@ function update() {
 	.attr("y1", function(d) { return d.source.y; })
 	.attr("x2", function(d) { return d.target.x; })
 	.attr("y2", function(d) { return d.target.y; })
+	.attr("marker-end", "url(#arrow)")
     	.merge(link);
         
     // Restart the force layout.
@@ -625,8 +651,8 @@ const legend = setup_legend();
 
 function add_child(parent, child){
     if(parent.children && !parent.children.includes(child)){
-	parent.children = parent.children.concat(child);
-	child.parent    = parent;
+		parent.children = parent.children.concat(child);
+		child.parent    = parent;
     }
 }
 
@@ -724,18 +750,28 @@ function toggle_children(d){
     update();
 }
 
+function tree_layout(d){
+	t = d3.tree().size([width, height]);
+	h = d3.hierarchy(d);
+	nodes = t(h)
+	nodes.each(function(n){
+		n.data.fx = n.x - width/2;
+		n.data.fy = n.y - height/2;
+	});
+	update();
+}
     // Toggle children on click.
 function click(d) {
     if (d3.event.defaultPrevented) {
-	return;
+		return;
     }
     if(d3.event.altKey) {
-	d.fx = null;
-	d.fy = null
+		d.fx = null;
+		d.fy = null
     } else if (d3.event.shiftKey) {
-	toggle_ancestors(d)
+		toggle_ancestors(d)
     } else {
-	toggle_children(d)
+		toggle_children(d)
     }
     update();
 }
@@ -750,9 +786,9 @@ function show_hover_div(d){
     var eng_name = d.commonNameList.commonNames.find(x => x && x.language == "English");
     var hdr="";
     if(eng_name){
-	hdr = eng_name.commonName + " (" + d.scientificName.combinedName+")";
+		hdr = eng_name.commonName + " (" + d.scientificName.combinedName+")";
     }else{
-	hdr = d.scientificName.combinedName;
+		hdr = d.scientificName.combinedName;
     }
     
     hover_div.html("");
@@ -817,14 +853,14 @@ function handle_node_touch_move(d){
 
 function handle_node_touch_end(d){
     if (!d3.event.active) simulation.alphaTarget(0);
-    dz = dropzones.selected();
+    	dz = dropzones.selected();
     if(dz){
-	dz.action(d);
-	d.fx = null;
-	d.fy = null;
+		dz.action(d);
+		d.fx = null;
+		d.fy = null;
     }else if(d3.event.dx * d3.event.dx + d3.event.dy * d3.event.dy > 9){
-	d.fx = d3.event.x;
-	d.fy = d3.event.y;
+		d.fx = d3.event.x;
+		d.fy = d3.event.y;
     }
     dropzones.deselect_all();
     dropzones.hide();
@@ -885,13 +921,16 @@ function setup_dropzones(){
 		      },
 		      action: toggle_children
 		     },
-		     {idx: ctr++, id: "toggle-ancestors", title: function(n){
-			 if(n && n.ancestors_state == states.expanded){
-			     return "Hide Ancestors";
-			 }
-			 return "Expand Ancestors"
-		     },
-		      action: toggle_ancestors},
+		     {idx: ctr++, id: "toggle-ancestors", 
+			 	title: function(n){
+			 		if(n && n.ancestors_state == states.expanded){
+			     		return "Hide Ancestors";
+			 		}
+			 		return "Expand Ancestors"
+		     	},
+		      	action: toggle_ancestors
+			},
+			 {idx: ctr++, id:"tree", title:"Tree Layout", action: function(d){tree_layout(d);}},
 		     {idx: ctr++, id:"unlock", title:"Unlock",
 		      action: function(d){d.fx = null; d.fy = null;}},
 		     {idx: ctr++, id:"hide", title:"Hide", action: function(d){d.visible = false}}]
@@ -928,11 +967,11 @@ function setup_dropzones(){
     update_dropzones()
 
     function show_dropzones(n){
-	update_dropzones(1,n)
+		update_dropzones(1,n)
     }
 
     function hide_dropzones(){
-	update_dropzones(-1)
+		update_dropzones(-1)
     }
 
     function selected_dropzone(){
@@ -941,45 +980,45 @@ function setup_dropzones(){
 
 
     function update_dropzones(active, n){
-	dropzones_binding
-	    .attr("fill", d => d.selected ? "yellow" : "grey")
+		dropzones_binding
+		    .attr("fill", d => d.selected ? "yellow" : "grey")
             .attr("x", dz_x)
-	    .attr("y", dz_y)
-	    .attr("width", dz_w)
-	    .attr("height", dz_h)
+	    	.attr("y", dz_y)
+	    	.attr("width", dz_w)
+	    	.attr("height", dz_h)
 	
-	dropzones_labels
-	    .attr("fill", d => d.selected ? "black" : "white")
+		dropzones_labels
+		    .attr("fill", d => d.selected ? "black" : "white")
             .attr("x", width/8)
-	    .attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
+	    	.attr("y", d => d.idx*height/dropzones.length + (height/(2*dropzones.length)))
 
-	if(n){
-	    dropzones_labels.text(d => d.title instanceof Function ? d.title(n) : d.title)
-	}
+		if(n){
+	    	dropzones_labels.text(d => d.title instanceof Function ? d.title(n) : d.title)
+		}
 	
-	if(active != 0){
-	    dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
-	    dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
-	}
+		if(active != 0){
+	    	dropzones_binding.attr("visibility", active > 0 ? "visible" : "hidden")
+	    	dropzones_labels.attr("visibility", active > 0? "visible" : "hidden")
+		}
     }
 
     function select_dropzone_containing(x, y){
-	dropzones.forEach(function(d){
-	    if( (0 <= x) && (width/4 > x) &&
-		( d.idx*height/dropzones.length <= y &&
-		  (d.idx+1)*height/dropzones.length > y) ){
-		d.selected = true;
-	    }else{
-		d.selected = false;
-	    }
-	});
-	update_dropzones(0)
+		dropzones.forEach(function(d){
+		    if( (0 <= x) && (width/4 > x) &&
+				( d.idx*height/dropzones.length <= y &&
+		  		(d.idx+1)*height/dropzones.length > y) ){
+				d.selected = true;
+	    	}else{
+				d.selected = false;
+	    	}
+		});
+		update_dropzones(0)
     }
 
     function select_dropzone(dz){
-	console.log("selecting dropzone "+dz.id)
-	dropzones.forEach(function(d){d.selected = (d == dz);})
-	update_dropzones(0)
+		console.log("selecting dropzone "+dz.id)
+		dropzones.forEach(function(d){d.selected = (d == dz);})
+		update_dropzones(0)
     }
 
     function deselect_dropzone(dz){
@@ -992,7 +1031,8 @@ function setup_dropzones(){
 	dropzones.forEach(function(d){d.selected = false;});
     }
     
-    return{ update:            update_dropzones,
+    return{ 
+		update:            update_dropzones,
 	    select:            select_dropzone,
 	    select_containing: select_dropzone_containing,
 	    deselect:          deselect_dropzone,
